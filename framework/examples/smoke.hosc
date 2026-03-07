@@ -1,0 +1,6 @@
+package main
+
+func main() {
+    text(10, 10, "framework smoke")
+    loop(2, 1)
+}
