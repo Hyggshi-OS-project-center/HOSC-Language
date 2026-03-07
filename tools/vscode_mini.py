@@ -278,9 +278,13 @@ class HOSCIDEMain(QMainWindow):
         self.find_next_action.setShortcut("F3")
         self.find_next_action.triggered.connect(self.find_next)
 
-        self.build_action = QAction("Build", self)
+        self.build_action = QAction("Build (.hbc)", self)
         self.build_action.setShortcut("Ctrl+B")
         self.build_action.triggered.connect(self.build_file)
+
+        self.build_exe_action = QAction("Build EXE", self)
+        self.build_exe_action.setShortcut("Ctrl+Shift+E")
+        self.build_exe_action.triggered.connect(self.build_exe_file)
 
         self.check_action = QAction("Check", self)
         self.check_action.setShortcut("Ctrl+Shift+B")
@@ -289,6 +293,10 @@ class HOSCIDEMain(QMainWindow):
         self.run_action = QAction("Run", self)
         self.run_action.setShortcut("F5")
         self.run_action.triggered.connect(self.run_file)
+
+        self.run_exe_action = QAction("Run EXE", self)
+        self.run_exe_action.setShortcut("F6")
+        self.run_exe_action.triggered.connect(self.run_exe_file)
 
         self.fmt_action = QAction("Format", self)
         self.fmt_action.setShortcut("Alt+Shift+F")
@@ -307,7 +315,9 @@ class HOSCIDEMain(QMainWindow):
 
         build_menu.addAction(self.check_action)
         build_menu.addAction(self.build_action)
+        build_menu.addAction(self.build_exe_action)
         build_menu.addAction(self.run_action)
+        build_menu.addAction(self.run_exe_action)
         build_menu.addAction(self.fmt_action)
 
         view_menu.addAction(self.refresh_action)
@@ -568,6 +578,20 @@ class HOSCIDEMain(QMainWindow):
             return False
         return True
 
+    def current_source_path(self):
+        editor = self.current_editor()
+        if editor is None:
+            return None
+
+        if not getattr(editor, "file_path", None):
+            if not self.save_file_as():
+                return None
+        else:
+            if not self.save_file():
+                return None
+
+        return Path(editor.file_path)
+
     def parse_error_lines_from_output(self, output_text):
         lines = set()
         patterns = [
@@ -688,18 +712,14 @@ class HOSCIDEMain(QMainWindow):
         if not self.ensure_toolchain():
             return False
 
-        editor = self.current_editor()
+        src = self.current_source_path()
+        if src is None:
+            return False
+
+        editor = self.current_editor(silent=True)
         if editor is None:
             return False
 
-        if not getattr(editor, "file_path", None):
-            if not self.save_file_as():
-                return False
-        else:
-            if not self.save_file():
-                return False
-
-        src = Path(editor.file_path)
         out = src.with_suffix(".hbc")
 
         cmd = [str(self.compiler), str(src), "-b", str(out)]
@@ -722,6 +742,34 @@ class HOSCIDEMain(QMainWindow):
         self.append_log(f"Build success: {out}")
         return True
 
+    def build_exe_file(self):
+        if not self.ensure_cli():
+            return None
+
+        src = self.current_source_path()
+        if src is None:
+            return None
+
+        editor = self.current_editor(silent=True)
+        if editor is None:
+            return None
+
+        exe_path = src.with_suffix(".exe")
+        cmd = [str(self.cli), "build", str(src), "-o", str(exe_path)]
+        result = self.run_subprocess_logged(cmd)
+        combined = ((result.stdout or "") + "\n" + (result.stderr or "")).strip()
+
+        if result.returncode != 0:
+            parsed_lines = self.parse_error_lines_from_output(combined)
+            if not parsed_lines:
+                parsed_lines = self.lint_error_lines(editor.toPlainText())
+            self.apply_error_underlines(editor, parsed_lines)
+            QMessageBox.warning(self, "Build EXE", f"Build EXE failed (exit {result.returncode}).")
+            return None
+
+        self.apply_error_underlines(editor, [])
+        self.append_log(f"Build EXE success: {exe_path}")
+        return exe_path
     def check_file(self):
         if not self.ensure_cli():
             return False
@@ -802,27 +850,38 @@ class HOSCIDEMain(QMainWindow):
         return True
 
     def run_file(self):
-        if not self.ensure_toolchain():
+        if not self.ensure_cli():
             return
 
-        editor = self.current_editor()
-        if editor is None:
+        src = self.current_source_path()
+        if src is None:
             return
 
-        if not self.build_file():
+        if not self.check_file():
             return
 
-        src = Path(editor.file_path)
-        out = src.with_suffix(".hbc")
-        cmd = [str(self.runtime), str(out)]
-
+        cmd = [str(self.cli), "run", str(src)]
         self.append_log(f"$ {' '.join(cmd)}")
 
         try:
             subprocess.Popen(cmd, cwd=str(self.project_root))
-            self.append_log("Runtime started in external process.")
+            self.append_log("Run started in external process.")
         except OSError as exc:
             QMessageBox.critical(self, "Run failed", str(exc))
+
+    def run_exe_file(self):
+        exe_path = self.build_exe_file()
+        if not exe_path:
+            return
+
+        cmd = [str(exe_path)]
+        self.append_log(f"$ {' '.join(cmd)}")
+
+        try:
+            subprocess.Popen(cmd, cwd=str(exe_path.parent))
+            self.append_log("EXE started in external process.")
+        except OSError as exc:
+            QMessageBox.critical(self, "Run EXE failed", str(exc))
 
     def find_text(self):
         editor = self.current_editor(silent=True)
@@ -952,3 +1011,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
