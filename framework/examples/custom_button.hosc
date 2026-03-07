@@ -1,0 +1,38 @@
+package main
+
+func custom_button(x, y, w, h, label) {
+    var clicked = button(x, y, w, h, label)
+
+    var mx = mouse_x()
+    var my = mouse_y()
+
+    if mx >= x {
+        if mx <= x + w {
+            if my >= y {
+                if my <= y + h {
+                    text(x, y - 18, "hover")
+                }
+            }
+        }
+    }
+
+    return clicked
+}
+
+func main() {
+    window("Custom Button Demo")
+
+    while true {
+        text(20, 20, "Custom button wrapper on top of builtin button()")
+
+        if custom_button(20, 70, 120, 32, "Save") {
+            print("save clicked")
+        }
+
+        if custom_button(160, 70, 120, 32, "Load") {
+            print("load clicked")
+        }
+
+        loop()
+    }
+}
