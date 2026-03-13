@@ -1,3 +1,8 @@
+/*
+ * File: compiler\src\parser.c
+ * Purpose: HOSC source file.
+ */
+
 #include <stdlib.h>
 #include <string.h>
 #include "parser.h"

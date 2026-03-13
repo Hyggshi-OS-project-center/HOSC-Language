@@ -1,3 +1,8 @@
+/*
+ * File: tools\legacy\hosc_engine.c
+ * Purpose: HOSC source file.
+ */
+
 #include "ast.h"
 #include "include/runtime.h"
 #include "include/codegen.h"

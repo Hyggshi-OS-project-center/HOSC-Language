@@ -1,3 +1,8 @@
+/*
+ * File: framework\src\hosc_modules.c
+ * Purpose: HOSC source file.
+ */
+
 #include "hosc_runtime.h"
 
 #include <math.h>

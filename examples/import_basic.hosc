@@ -1,0 +1,13 @@
+/*
+ * File: examples\import_basic.hosc
+ * Purpose: HOSC source file.
+ */
+
+package main
+
+import "utils.hosc"
+
+func main() {
+    hello()
+    print(add(7, 9))
+}

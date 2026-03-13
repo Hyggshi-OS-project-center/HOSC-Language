@@ -1,0 +1,16 @@
+/*
+ * File: examples\utils.hosc
+ * Purpose: HOSC source file.
+ */
+
+func hello() {
+    print("Hello from utils")
+}
+
+func add(a, b) {
+    return a + b
+}
+
+func create_window(title) {
+    print("Creating window with title: " + title)
+}

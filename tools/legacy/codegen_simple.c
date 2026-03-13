@@ -1,3 +1,8 @@
+/*
+ * File: tools\legacy\codegen_simple.c
+ * Purpose: HOSC source file.
+ */
+
 // codegen_simple.c - Simple C code generator for HOSC AST
 //
 // Generates basic C code from the simplified AST structure.

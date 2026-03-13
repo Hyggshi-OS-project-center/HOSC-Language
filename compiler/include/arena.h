@@ -1,3 +1,8 @@
+/*
+ * File: compiler\include\arena.h
+ * Purpose: HOSC source file.
+ */
+
 #ifndef ARENA_H
 #define ARENA_H
 

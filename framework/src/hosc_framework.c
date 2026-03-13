@@ -1,3 +1,8 @@
+/*
+ * File: framework\src\hosc_framework.c
+ * Purpose: HOSC source file.
+ */
+
 #include "hosc_runtime.h"
 
 #include <ctype.h>

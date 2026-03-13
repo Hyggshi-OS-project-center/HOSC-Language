@@ -1,3 +1,8 @@
+/*
+ * File: compiler\src\arena.c
+ * Purpose: HOSC source file.
+ */
+
 #include "arena.h"
 #include <stdlib.h>
 #include <string.h>

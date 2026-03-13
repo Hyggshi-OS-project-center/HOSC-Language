@@ -1,3 +1,8 @@
+/*
+ * File: tools\legacy\hvm_example.c
+ * Purpose: HOSC source file.
+ */
+
 // hvm_example.c - HOSC Virtual Machine Example
 //
 // Demonstrates how to use the HOSC Virtual Machine (HVM) to execute

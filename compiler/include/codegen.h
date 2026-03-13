@@ -1,3 +1,8 @@
+/*
+ * File: compiler\include\codegen.h
+ * Purpose: HOSC source file.
+ */
+
 #pragma once
 #ifdef __cplusplus
 extern "C" {

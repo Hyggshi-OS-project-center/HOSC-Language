@@ -1,3 +1,8 @@
+/*
+ * File: runtime\include\hvm_compiler.h
+ * Purpose: HOSC source file.
+ */
+
 // hvm_compiler.h - HOSC Virtual Machine Compiler Header
 
 #ifndef HVM_COMPILER_H

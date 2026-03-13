@@ -1,3 +1,8 @@
+/*
+ * File: runtime\src\executor.c
+ * Purpose: HOSC source file.
+ */
+
 /* executor.c - Simple AST execution dispatcher for HOSC runtime */
 
 #include <stdio.h>
@@ -26,13 +31,15 @@ typedef struct {
     RuntimeValue value;
 } Var;
 
-static Var vars[MAX_VARS];
-static size_t var_count = 0;
-static ASTNode *g_program = NULL;
-static int g_returning = 0;
-static RuntimeValue g_return_value;
-static int g_breaking = 0;
-static int g_continuing = 0;
+typedef struct {
+    Var vars[MAX_VARS];
+    size_t var_count;
+    ASTNode *program;
+    int returning;
+    RuntimeValue return_value;
+    int breaking;
+    int continuing;
+} RuntimeContext;
 
 static RuntimeValue rv_int(int v) {
     RuntimeValue out;
@@ -101,82 +108,83 @@ static int rv_copy(RuntimeValue *dst, const RuntimeValue *src) {
     return 1;
 }
 
-static void clear_vars(void) {
+static void clear_vars(RuntimeContext *ctx) {
     size_t i;
-    for (i = 0; i < var_count; i++) {
-        free(vars[i].name);
-        vars[i].name = NULL;
-        rv_free(&vars[i].value);
+    if (!ctx) return;
+    for (i = 0; i < ctx->var_count; i++) {
+        free(ctx->vars[i].name);
+        ctx->vars[i].name = NULL;
+        rv_free(&ctx->vars[i].value);
     }
-    var_count = 0;
+    ctx->var_count = 0;
 }
 
-static Var *find_var(const char *name) {
+static Var *find_var(RuntimeContext *ctx, const char *name) {
     size_t i;
-    if (!name) return NULL;
-    for (i = 0; i < var_count; i++) {
-        if (vars[i].name && strcmp(vars[i].name, name) == 0) return &vars[i];
+    if (!ctx || !name) return NULL;
+    for (i = 0; i < ctx->var_count; i++) {
+        if (ctx->vars[i].name && strcmp(ctx->vars[i].name, name) == 0) return &ctx->vars[i];
     }
     return NULL;
 }
 
-static void unset_var(const char *name) {
+static void unset_var(RuntimeContext *ctx, const char *name) {
     size_t i;
-    if (!name) return;
+    if (!ctx || !name) return;
 
-    for (i = 0; i < var_count; i++) {
-        if (vars[i].name && strcmp(vars[i].name, name) == 0) {
+    for (i = 0; i < ctx->var_count; i++) {
+        if (ctx->vars[i].name && strcmp(ctx->vars[i].name, name) == 0) {
             size_t j;
-            free(vars[i].name);
-            rv_free(&vars[i].value);
-            for (j = i; j + 1 < var_count; j++) {
-                vars[j] = vars[j + 1];
+            free(ctx->vars[i].name);
+            rv_free(&ctx->vars[i].value);
+            for (j = i; j + 1 < ctx->var_count; j++) {
+                ctx->vars[j] = ctx->vars[j + 1];
             }
-            memset(&vars[var_count - 1], 0, sizeof(vars[var_count - 1]));
-            var_count--;
+            memset(&ctx->vars[ctx->var_count - 1], 0, sizeof(ctx->vars[ctx->var_count - 1]));
+            ctx->var_count--;
             return;
         }
     }
 }
 
-static int set_var_value(const char *name, const RuntimeValue *value) {
+static int set_var_value(RuntimeContext *ctx, const char *name, const RuntimeValue *value) {
     Var *existing;
 
-    if (!name || !value) return 0;
+    if (!ctx || !name || !value) return 0;
 
-    existing = find_var(name);
+    existing = find_var(ctx, name);
     if (existing) {
         return rv_copy(&existing->value, value);
     }
 
-    if (var_count >= MAX_VARS) {
+    if (ctx->var_count >= MAX_VARS) {
         fprintf(stderr, "Runtime warning: variable table full, cannot set '%s'\n", name);
         return 0;
     }
 
-    vars[var_count].name = strdup(name);
-    if (!vars[var_count].name) {
+    ctx->vars[ctx->var_count].name = strdup(name);
+    if (!ctx->vars[ctx->var_count].name) {
         fprintf(stderr, "Runtime error: out of memory while storing variable name\n");
         return 0;
     }
-    memset(&vars[var_count].value, 0, sizeof(vars[var_count].value));
+    memset(&ctx->vars[ctx->var_count].value, 0, sizeof(ctx->vars[ctx->var_count].value));
 
-    if (!rv_copy(&vars[var_count].value, value)) {
-        free(vars[var_count].name);
-        vars[var_count].name = NULL;
+    if (!rv_copy(&ctx->vars[ctx->var_count].value, value)) {
+        free(ctx->vars[ctx->var_count].name);
+        ctx->vars[ctx->var_count].name = NULL;
         return 0;
     }
 
-    var_count++;
+    ctx->var_count++;
     return 1;
 }
 
-static ASTNode *find_function(const char *name) {
+static ASTNode *find_function(RuntimeContext *ctx, const char *name) {
     ASTNodeList *cur;
 
-    if (!g_program || g_program->type != AST_PROGRAM || !name) return NULL;
+    if (!ctx || !ctx->program || ctx->program->type != AST_PROGRAM || !name) return NULL;
 
-    cur = g_program->data.program.declarations;
+    cur = ctx->program->data.program.declarations;
     while (cur) {
         ASTNode *decl = cur->node;
         if (decl && decl->type == AST_FUNCTION && decl->data.function.name && strcmp(decl->data.function.name, name) == 0) {
@@ -188,27 +196,27 @@ static ASTNode *find_function(const char *name) {
     return NULL;
 }
 
-static int eval_expr(ASTNode *expr);
-static RuntimeValue eval_expr_value(ASTNode *expr);
-static void exec_statement(ASTNode *stmt);
+static int eval_expr(RuntimeContext *ctx, ASTNode *expr);
+static RuntimeValue eval_expr_value(RuntimeContext *ctx, ASTNode *expr);
+static void exec_statement(RuntimeContext *ctx, ASTNode *stmt);
 
-static void exec_block(ASTNode *block) {
+static void exec_block(RuntimeContext *ctx, ASTNode *block) {
     ASTNodeList *cur;
-    if (!block || block->type != AST_BLOCK) return;
+    if (!ctx || !block || block->type != AST_BLOCK) return;
 
     cur = block->data.block.statements;
-    while (cur && !g_returning && !g_breaking && !g_continuing) {
-        exec_statement(cur->node);
+    while (cur && !ctx->returning && !ctx->breaking && !ctx->continuing) {
+        exec_statement(ctx, cur->node);
         cur = cur->next;
     }
 }
 
-static RuntimeValue exec_call_value(ASTNode *fn, ASTNodeList *args) {
+static RuntimeValue exec_call_value(RuntimeContext *ctx, ASTNode *fn, ASTNodeList *args) {
     RuntimeValue ret = rv_int(0);
-    int old_returning = g_returning;
+    int old_returning = ctx->returning;
     RuntimeValue old_return_value = rv_int(0);
-    int old_breaking = g_breaking;
-    int old_continuing = g_continuing;
+    int old_breaking = ctx->breaking;
+    int old_continuing = ctx->continuing;
     size_t param_count;
     RuntimeValue *arg_values = NULL;
     int *had_prev = NULL;
@@ -216,9 +224,9 @@ static RuntimeValue exec_call_value(ASTNode *fn, ASTNodeList *args) {
     size_t i;
     ASTNodeList *arg_node;
 
-    if (!fn || fn->type != AST_FUNCTION) return ret;
+    if (!ctx || !fn || fn->type != AST_FUNCTION) return ret;
 
-    if (!rv_copy(&old_return_value, &g_return_value)) {
+    if (!rv_copy(&old_return_value, &ctx->return_value)) {
         return ret;
     }
 
@@ -240,7 +248,7 @@ static RuntimeValue exec_call_value(ASTNode *fn, ASTNodeList *args) {
     arg_node = args;
     for (i = 0; i < param_count; i++) {
         if (arg_node) {
-            arg_values[i] = eval_expr_value(arg_node->node);
+            arg_values[i] = eval_expr_value(ctx, arg_node->node);
             arg_node = arg_node->next;
         } else {
             arg_values[i] = rv_int(0);
@@ -252,26 +260,26 @@ static RuntimeValue exec_call_value(ASTNode *fn, ASTNodeList *args) {
         Var *old_var;
         if (!param) continue;
 
-        old_var = find_var(param);
+        old_var = find_var(ctx, param);
         had_prev[i] = old_var ? 1 : 0;
         if (old_var && !rv_copy(&prev_values[i], &old_var->value)) {
             goto call_cleanup;
         }
 
-        if (!set_var_value(param, &arg_values[i])) {
+        if (!set_var_value(ctx, param, &arg_values[i])) {
             goto call_cleanup;
         }
     }
 
-    g_returning = 0;
-    rv_free(&g_return_value);
-    g_return_value = rv_int(0);
-    g_breaking = 0;
-    g_continuing = 0;
-    exec_block(fn->data.function.body);
+    ctx->returning = 0;
+    rv_free(&ctx->return_value);
+    ctx->return_value = rv_int(0);
+    ctx->breaking = 0;
+    ctx->continuing = 0;
+    exec_block(ctx, fn->data.function.body);
 
-    if (g_returning) {
-        if (!rv_copy(&ret, &g_return_value)) {
+    if (ctx->returning) {
+        if (!rv_copy(&ret, &ctx->return_value)) {
             ret = rv_int(0);
         }
     }
@@ -282,17 +290,17 @@ call_cleanup:
         if (!param) continue;
 
         if (had_prev[i]) {
-            set_var_value(param, &prev_values[i]);
+            set_var_value(ctx, param, &prev_values[i]);
         } else {
-            unset_var(param);
+            unset_var(ctx, param);
         }
     }
 
-    g_returning = old_returning;
-    rv_free(&g_return_value);
-    rv_copy(&g_return_value, &old_return_value);
-    g_breaking = old_breaking;
-    g_continuing = old_continuing;
+    ctx->returning = old_returning;
+    rv_free(&ctx->return_value);
+    rv_copy(&ctx->return_value, &old_return_value);
+    ctx->breaking = old_breaking;
+    ctx->continuing = old_continuing;
 
     for (i = 0; i < param_count; i++) {
         rv_free(&arg_values[i]);
@@ -306,14 +314,14 @@ call_cleanup:
     return ret;
 }
 
-static int exec_call(ASTNode *fn, ASTNodeList *args) {
-    RuntimeValue ret = exec_call_value(fn, args);
+static int exec_call(RuntimeContext *ctx, ASTNode *fn, ASTNodeList *args) {
+    RuntimeValue ret = exec_call_value(ctx, fn, args);
     int out = rv_as_int(&ret);
     rv_free(&ret);
     return out;
 }
 
-static int eval_expr(ASTNode *expr) {
+static int eval_expr(RuntimeContext *ctx, ASTNode *expr) {
     if (!expr) return 0;
 
     switch (expr->type) {
@@ -327,7 +335,7 @@ static int eval_expr(ASTNode *expr) {
             return (int)expr->data.fnumber.value;
 
         case AST_IDENTIFIER: {
-            Var *v = find_var(expr->data.identifier.name);
+            Var *v = find_var(ctx, expr->data.identifier.name);
             if (!v) return 0;
             switch (v->value.type) {
                 case RV_FLOAT: return (int)v->value.float_value;
@@ -338,7 +346,7 @@ static int eval_expr(ASTNode *expr) {
         }
 
         case AST_UNARY_OP: {
-            int value = eval_expr(expr->data.unary_op.operand);
+            int value = eval_expr(ctx, expr->data.unary_op.operand);
             switch (expr->data.unary_op.op) {
                 case TOKEN_MINUS: return -value;
                 case TOKEN_BANG: return !value;
@@ -347,8 +355,8 @@ static int eval_expr(ASTNode *expr) {
         }
 
         case AST_BINARY_OP: {
-            int left = eval_expr(expr->data.binary_op.left);
-            int right = eval_expr(expr->data.binary_op.right);
+            int left = eval_expr(ctx, expr->data.binary_op.left);
+            int right = eval_expr(ctx, expr->data.binary_op.right);
 
             switch (expr->data.binary_op.op) {
                 case TOKEN_PLUS: return left + right;
@@ -369,12 +377,12 @@ static int eval_expr(ASTNode *expr) {
         }
 
         case AST_CALL_EXPR: {
-            ASTNode *fn = find_function(expr->data.call_expr.callee);
+            ASTNode *fn = find_function(ctx, expr->data.call_expr.callee);
             if (!fn) {
                 fprintf(stderr, "Runtime warning: function not found: %s\n", expr->data.call_expr.callee ? expr->data.call_expr.callee : "<null>");
                 return 0;
             }
-            return exec_call(fn, expr->data.call_expr.arguments);
+            return exec_call(ctx, fn, expr->data.call_expr.arguments);
         }
 
         default:
@@ -382,7 +390,7 @@ static int eval_expr(ASTNode *expr) {
     }
 }
 
-static RuntimeValue eval_expr_value(ASTNode *expr) {
+static RuntimeValue eval_expr_value(RuntimeContext *ctx, ASTNode *expr) {
     RuntimeValue out;
     if (!expr) return rv_int(0);
 
@@ -392,49 +400,49 @@ static RuntimeValue eval_expr_value(ASTNode *expr) {
         case AST_STRING:
             return rv_string_dup(expr->data.string_lit.value);
         case AST_IDENTIFIER: {
-            Var *v = find_var(expr->data.identifier.name);
+            Var *v = find_var(ctx, expr->data.identifier.name);
             if (!v) return rv_int(0);
             out = rv_int(0);
             if (!rv_copy(&out, &v->value)) return rv_int(0);
             return out;
         }
         case AST_CALL_EXPR: {
-            ASTNode *fn = find_function(expr->data.call_expr.callee);
+            ASTNode *fn = find_function(ctx, expr->data.call_expr.callee);
             if (!fn) {
                 fprintf(stderr, "Runtime warning: function not found: %s\n", expr->data.call_expr.callee ? expr->data.call_expr.callee : "<null>");
                 return rv_int(0);
             }
-            return exec_call_value(fn, expr->data.call_expr.arguments);
+            return exec_call_value(ctx, fn, expr->data.call_expr.arguments);
         }
         default:
-            return rv_int(eval_expr(expr));
+            return rv_int(eval_expr(ctx, expr));
     }
 }
 
-static void exec_statement(ASTNode *stmt) {
-    if (!stmt || g_returning) return;
+static void exec_statement(RuntimeContext *ctx, ASTNode *stmt) {
+    if (!ctx || !stmt || ctx->returning) return;
 
     switch (stmt->type) {
         case AST_BLOCK:
-            exec_block(stmt);
+            exec_block(ctx, stmt);
             break;
 
         case AST_VARIABLE_DECLARATION: {
-            RuntimeValue value = eval_expr_value(stmt->data.variable_declaration.value);
-            set_var_value(stmt->data.variable_declaration.identifier, &value);
+            RuntimeValue value = eval_expr_value(ctx, stmt->data.variable_declaration.value);
+            set_var_value(ctx, stmt->data.variable_declaration.identifier, &value);
             rv_free(&value);
             break;
         }
 
         case AST_ASSIGNMENT: {
-            RuntimeValue value = eval_expr_value(stmt->data.assignment.value);
-            set_var_value(stmt->data.assignment.identifier, &value);
+            RuntimeValue value = eval_expr_value(ctx, stmt->data.assignment.value);
+            set_var_value(ctx, stmt->data.assignment.identifier, &value);
             rv_free(&value);
             break;
         }
 
         case AST_PRINT_STATEMENT: {
-            RuntimeValue value = eval_expr_value(stmt->data.print_statement.expression);
+            RuntimeValue value = eval_expr_value(ctx, stmt->data.print_statement.expression);
             switch (value.type) {
                 case RV_FLOAT:
                     printf("%f\n", value.float_value);
@@ -452,27 +460,27 @@ static void exec_statement(ASTNode *stmt) {
         }
 
         case AST_EXPR_STATEMENT:
-            (void)eval_expr(stmt->data.expr_stmt.expression);
+            (void)eval_expr(ctx, stmt->data.expr_stmt.expression);
             break;
 
         case AST_IF:
-            if (eval_expr(stmt->data.if_stmt.condition)) {
-                exec_statement(stmt->data.if_stmt.then_branch);
+            if (eval_expr(ctx, stmt->data.if_stmt.condition)) {
+                exec_statement(ctx, stmt->data.if_stmt.then_branch);
             } else if (stmt->data.if_stmt.else_branch) {
-                exec_statement(stmt->data.if_stmt.else_branch);
+                exec_statement(ctx, stmt->data.if_stmt.else_branch);
             }
             break;
 
         case AST_WHILE:
-            while (!g_returning && eval_expr(stmt->data.while_stmt.condition)) {
-                exec_statement(stmt->data.while_stmt.body);
-                if (g_returning) break;
-                if (g_breaking) {
-                    g_breaking = 0;
+            while (!ctx->returning && eval_expr(ctx, stmt->data.while_stmt.condition)) {
+                exec_statement(ctx, stmt->data.while_stmt.body);
+                if (ctx->returning) break;
+                if (ctx->breaking) {
+                    ctx->breaking = 0;
                     break;
                 }
-                if (g_continuing) {
-                    g_continuing = 0;
+                if (ctx->continuing) {
+                    ctx->continuing = 0;
                     continue;
                 }
             }
@@ -480,54 +488,54 @@ static void exec_statement(ASTNode *stmt) {
 
         case AST_FOR:
             if (stmt->data.for_stmt.init) {
-                exec_statement(stmt->data.for_stmt.init);
+                exec_statement(ctx, stmt->data.for_stmt.init);
             }
-            while (!g_returning) {
-                int cond_value = stmt->data.for_stmt.condition ? eval_expr(stmt->data.for_stmt.condition) : 1;
+            while (!ctx->returning) {
+                int cond_value = stmt->data.for_stmt.condition ? eval_expr(ctx, stmt->data.for_stmt.condition) : 1;
                 if (!cond_value) break;
 
-                exec_statement(stmt->data.for_stmt.body);
-                if (g_returning) break;
-                if (g_breaking) {
-                    g_breaking = 0;
+                exec_statement(ctx, stmt->data.for_stmt.body);
+                if (ctx->returning) break;
+                if (ctx->breaking) {
+                    ctx->breaking = 0;
                     break;
                 }
 
                 if (stmt->data.for_stmt.update) {
-                    exec_statement(stmt->data.for_stmt.update);
-                    if (g_returning) break;
-                    if (g_breaking) {
-                        g_breaking = 0;
+                    exec_statement(ctx, stmt->data.for_stmt.update);
+                    if (ctx->returning) break;
+                    if (ctx->breaking) {
+                        ctx->breaking = 0;
                         break;
                     }
                 }
 
-                if (g_continuing) {
-                    g_continuing = 0;
+                if (ctx->continuing) {
+                    ctx->continuing = 0;
                 }
             }
             break;
 
         case AST_RETURN:
-            rv_free(&g_return_value);
+            rv_free(&ctx->return_value);
             if (stmt->data.return_stmt.value) {
-                RuntimeValue value = eval_expr_value(stmt->data.return_stmt.value);
-                if (!rv_copy(&g_return_value, &value)) {
-                    g_return_value = rv_int(0);
+                RuntimeValue value = eval_expr_value(ctx, stmt->data.return_stmt.value);
+                if (!rv_copy(&ctx->return_value, &value)) {
+                    ctx->return_value = rv_int(0);
                 }
                 rv_free(&value);
             } else {
-                g_return_value = rv_int(0);
+                ctx->return_value = rv_int(0);
             }
-            g_returning = 1;
+            ctx->returning = 1;
             break;
 
         case AST_BREAK:
-            g_breaking = 1;
+            ctx->breaking = 1;
             break;
 
         case AST_CONTINUE:
-            g_continuing = 1;
+            ctx->continuing = 1;
             break;
 
         default:
@@ -537,19 +545,20 @@ static void exec_statement(ASTNode *stmt) {
 
 void runtime_execute(ASTNode *ast) {
     ASTNode *main_fn = NULL;
+    RuntimeContext ctx;
 
     if (!ast) return;
 
-    clear_vars();
-    g_returning = 0;
-    rv_free(&g_return_value);
-    g_return_value = rv_int(0);
-    g_breaking = 0;
-    g_continuing = 0;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.return_value = rv_int(0);
+    clear_vars(&ctx);
+    ctx.returning = 0;
+    ctx.breaking = 0;
+    ctx.continuing = 0;
 
     if (ast->type == AST_PROGRAM) {
         ASTNodeList *cur;
-        g_program = ast;
+        ctx.program = ast;
 
         cur = ast->data.program.declarations;
         while (cur) {
@@ -562,24 +571,24 @@ void runtime_execute(ASTNode *ast) {
         }
 
         if (main_fn) {
-            (void)exec_call(main_fn, NULL);
+            (void)exec_call(&ctx, main_fn, NULL);
         } else {
             cur = ast->data.program.declarations;
             while (cur) {
-                exec_statement(cur->node);
+                exec_statement(&ctx, cur->node);
                 cur = cur->next;
             }
         }
     } else {
-        g_program = NULL;
-        exec_statement(ast);
+        ctx.program = NULL;
+        exec_statement(&ctx, ast);
     }
 
-    clear_vars();
-    g_program = NULL;
-    g_returning = 0;
-    rv_free(&g_return_value);
-    g_return_value = rv_int(0);
-    g_breaking = 0;
-    g_continuing = 0;
+    clear_vars(&ctx);
+    ctx.program = NULL;
+    ctx.returning = 0;
+    rv_free(&ctx.return_value);
+    ctx.return_value = rv_int(0);
+    ctx.breaking = 0;
+    ctx.continuing = 0;
 }

@@ -1,3 +1,8 @@
+/*
+ * File: framework\include\hosc_runtime.h
+ * Purpose: HOSC source file.
+ */
+
 #ifndef HOSC_RUNTIME_H
 #define HOSC_RUNTIME_H
 

@@ -1,3 +1,8 @@
+/*
+ * File: compiler\include\parser.h
+ * Purpose: HOSC source file.
+ */
+
 #ifndef PARSER_H
 #define PARSER_H
 #ifdef __cplusplus

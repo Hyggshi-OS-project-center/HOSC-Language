@@ -1,3 +1,8 @@
+/*
+ * File: tools\legacy\hosc_example.c
+ * Purpose: HOSC source file.
+ */
+
 // hosc_example.c - HOSC Library Example
 //
 // Demonstrates how to use the HOSC library to parse and execute HOSC code.
