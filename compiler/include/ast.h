@@ -1,3 +1,8 @@
+/*
+ * File: compiler\include\ast.h
+ * Purpose: HOSC source file.
+ */
+
 #pragma once
 #ifdef __cplusplus
 extern "C" {

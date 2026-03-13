@@ -1,3 +1,8 @@
+/*
+ * File: framework\examples\custom_button.hosc
+ * Purpose: HOSC source file.
+ */
+
 package main
 
 func custom_button(x, y, w, h, label) {

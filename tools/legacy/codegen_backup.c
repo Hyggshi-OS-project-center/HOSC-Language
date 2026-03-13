@@ -1,3 +1,8 @@
+/*
+ * File: tools\legacy\codegen_backup.c
+ * Purpose: HOSC source file.
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

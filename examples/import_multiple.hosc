@@ -1,0 +1,16 @@
+/*
+ * File: examples\import_multiple.hosc
+ * Purpose: HOSC source file.
+ */
+
+package main
+
+from utils import hello, add, create_window
+
+func main() {
+    hello()
+    print(add(3, 4))
+    create_window("Import Multiple Demo")
+    print(add(10, 20))
+    print("This is a demo of importing multiple functions from a module.")
+}

@@ -1,3 +1,8 @@
+/*
+ * File: runtime\include\hvm.h
+ * Purpose: HOSC source file.
+ */
+
 #ifndef HVM_H
 #define HVM_H
 
@@ -13,6 +18,9 @@ extern "C" {
 #define HVM_MEMORY_SIZE 4096
 #define HVM_MAX_FUNCTIONS 256
 #define HVM_MAX_STRINGS 512
+
+typedef struct HoscApiContext HoscApiContext;
+typedef struct HVM_RuntimeServices HVM_RuntimeServices;
 
 typedef enum {
     HVM_PUSH_INT,
@@ -183,6 +191,16 @@ typedef struct {
     size_t gc_next_collection;
     int gc_enabled;
     int gc_pending;
+
+    HoscApiContext *cpp_api;
+    HVM_RuntimeServices *services;
+
+    char *scratch_a;
+    size_t scratch_a_cap;
+    char *scratch_b;
+    size_t scratch_b_cap;
+    char *scratch_concat;
+    size_t scratch_concat_cap;
 } HVM_VM;
 
 HVM_VM* hvm_create(void);
@@ -228,3 +246,4 @@ void hvm_disassemble(HVM_VM* vm);
 #endif
 
 #endif // HVM_H
+

@@ -1,0 +1,13 @@
+/*
+ * File: examples\import_alias.hosc
+ * Purpose: HOSC source file.
+ */
+
+package main
+
+import utils as u
+
+func main() {
+    u.hello()
+    print(u.add(10, 5))
+}

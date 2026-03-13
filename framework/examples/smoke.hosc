@@ -1,3 +1,8 @@
+/*
+ * File: framework\examples\smoke.hosc
+ * Purpose: HOSC source file.
+ */
+
 package main
 
 func main() {

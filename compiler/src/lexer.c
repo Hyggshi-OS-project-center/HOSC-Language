@@ -1,3 +1,8 @@
+/*
+ * File: compiler\src\lexer.c
+ * Purpose: HOSC source file.
+ */
+
 #include <ctype.h>
 #include <errno.h>
 #include <limits.h>

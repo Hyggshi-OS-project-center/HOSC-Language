@@ -1,3 +1,8 @@
+/*
+ * File: tools\legacy\hosc_lib.h
+ * Purpose: HOSC source file.
+ */
+
 #ifndef HOSC_LIB_H
 #define HOSC_LIB_H
 

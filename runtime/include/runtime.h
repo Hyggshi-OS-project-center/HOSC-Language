@@ -1,3 +1,8 @@
+/*
+ * File: runtime\include\runtime.h
+ * Purpose: HOSC source file.
+ */
+
 #pragma once
 
 #ifdef __cplusplus

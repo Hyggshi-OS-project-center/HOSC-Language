@@ -1,3 +1,8 @@
+/*
+ * File: compiler\src\ast_utils.c
+ * Purpose: HOSC source file.
+ */
+
 #include <stdlib.h>
 #include <string.h>
 #include "ast.h"
