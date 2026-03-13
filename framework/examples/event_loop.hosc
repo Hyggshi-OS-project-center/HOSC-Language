@@ -1,0 +1,8 @@
+/* event_loop.hosc - HOSC source file */
+
+package main
+
+func main() {
+    window("HOSC Event Loop")
+    text(40, 60, "Close window to stop")
+}

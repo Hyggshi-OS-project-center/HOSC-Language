@@ -1,0 +1,12 @@
+{
+    "files.associations": {
+        "*.hxsh": "Hyggshi Code",
+        "stdio.h": "c",
+        "lexer.h": "c",
+        "assert_helpers.h": "c",
+        "codegen.h": "c",
+        "parser.h": "c",
+        "string.h": "c"
+    },
+    "C_Cpp.errorSquiggles": "disabled"
+}
