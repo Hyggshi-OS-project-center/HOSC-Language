@@ -1,5 +1,7 @@
 # HOSC Language
 
+![build](https://github.com/Hyggshi-OS-project-center/HOSC-Language/actions/workflows/build.yml/badge.svg)
+
 Project structure:
 
 - compiler/: HOSC compiler (lexer/parser/AST/codegen + compiler frontend)
