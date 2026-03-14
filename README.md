@@ -115,8 +115,3 @@ Menu event IDs exposed to script:
 - `1002` = Open
 - `1003` = Save
 - `1004` = Exit
-
-
-=======
-# HOSC-Language
->>>>>>> 995adf4f7dd3fdb25496c878c7f120fb6d0ed860
