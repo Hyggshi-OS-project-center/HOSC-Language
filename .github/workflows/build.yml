@@ -1,0 +1,32 @@
+name: Build HOSC Language
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: |
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-make
+
+      - name: Build and Unit Test
+        shell: msys2 {0}
+        run: |
+          mingw32-make -C tools all test
+
+      - name: Integration Test (Quality Gate)
+        shell: pwsh
+        run: |
+          $env:PATH = "C:\msys64\mingw64\bin;$env:PATH"
+          powershell -File tools/quality_gate.ps1
