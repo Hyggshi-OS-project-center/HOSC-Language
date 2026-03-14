@@ -2,23 +2,17 @@ name: Build HOSC Language
 
 on:
   push:
-    branches: [ main ]
   pull_request:
-    branches: [ main ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install build tools
+      - name: Install compiler
         run: sudo apt-get update && sudo apt-get install -y build-essential make
 
-      - name: Build project
-        run: make
-
-      - name: Run program (optional)
-        run: ./hosc || true
+      - name: Build HOSC
+        run: make -C tools
