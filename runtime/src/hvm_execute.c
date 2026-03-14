@@ -1125,7 +1125,7 @@ static int hvm_exec_command(HVM_VM *vm, const HVM_Instruction *instr) {
         ? cmd_value.data.string_value
         : hvm_value_to_cstring(vm, cmd_value, &vm->scratch_a, &vm->scratch_a_cap);
 
-    out = hvm_exec_command(cmd);
+    out = hvm_exec_shell_command(cmd);
     if (!out) out = strdup("");
     if (!out || !hvm_push_string(vm, out)) {
         free(out);
