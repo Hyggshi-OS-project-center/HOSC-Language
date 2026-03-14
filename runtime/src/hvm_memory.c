@@ -195,7 +195,7 @@ static int hvm_write_text_file(const char *path, const char *text) {
     return written == len;
 }
 
-static char *hvm_exec_command(const char *cmd) {
+static char *hvm_exec_shell_command(const char *cmd) {
     FILE *pipe;
     char chunk[256];
     char *output;
