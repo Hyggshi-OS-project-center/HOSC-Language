@@ -17,6 +17,8 @@ COMPILER_SRC = \
 	$(ROOT)/runtime/src/hvm.c \
 	$(ROOT)/runtime/src/hvm_compiler.c
 
+CLI_SRC = $(ROOT)/tools/hosc_cli.c
+
 RUNTIME_SRC = \
 	$(ROOT)/runtime/src/hvm_runner.c \
 	$(ROOT)/runtime/src/hvm.c
@@ -42,14 +44,14 @@ $(OBJ_DIR):
 $(CPP_API_OBJ): $(CPP_API_SRC) | $(OBJ_DIR)
 	$(CC) $(CXXFLAGS) $(INCLUDES) -x c++ -c $< -o $@
 
-$(COMPILER_EXE): $(COMPILER_SRC) $(CPP_API_OBJ) | $(OUT_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(COMPILER_SRC) $(CPP_API_OBJ) $(LDFLAGS)
+$(COMPILER_EXE): $(CLI_SRC) $(COMPILER_SRC) $(CPP_API_OBJ) | $(OUT_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(CLI_SRC) $(COMPILER_SRC) $(CPP_API_OBJ) $(LDFLAGS)
 
 $(RUNTIME_EXE): $(RUNTIME_SRC) $(CPP_API_OBJ) | $(OUT_DIR)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(RUNTIME_SRC) $(CPP_API_OBJ) $(LDFLAGS)
 
-$(CLI_EXE): $(ROOT)/tools/hosc_cli.c | $(OUT_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $< $(LDFLAGS)
+$(CLI_EXE): $(CLI_SRC) $(COMPILER_SRC) $(CPP_API_OBJ) | $(OUT_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(CLI_SRC) $(COMPILER_SRC) $(CPP_API_OBJ) $(LDFLAGS)
 
 $(TEST_EXE): $(ROOT)/tools/tests/test_compiler.c $(COMPILER_SRC) $(CPP_API_OBJ) | $(OUT_DIR)
 	$(CC) $(CFLAGS) $(INCLUDES) -I$(ROOT)/tools/tests -o $@ $(ROOT)/tools/tests/test_compiler.c $(COMPILER_SRC) $(CPP_API_OBJ) $(LDFLAGS)

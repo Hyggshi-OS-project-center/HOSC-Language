@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <ctype.h>
 #include <errno.h>
+#include "hosc_compiler.h"
 #include "parser.h"
 #include "codegen.h"
 #include "hvm.h"
@@ -961,7 +962,7 @@ static void print_usage(const char *exe) {
     fprintf(stderr, "  -r  run with VM (no gcc needed)\n");
 }
 
-int main(int argc, char **argv) {
+int hosc_compile_cli(int argc, char **argv) {
     const char *input_path;
     const char *c_output_path = NULL;
     const char *exe_output_path = NULL;
@@ -1043,7 +1044,6 @@ int main(int argc, char **argv) {
 
     return 0;
 }
-
 
 
 
