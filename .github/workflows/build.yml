@@ -16,12 +16,14 @@ jobs:
         with:
           msystem: MINGW64
           update: true
-          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-make
+          install: |
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-make
 
       - name: Build and Unit Test
         shell: msys2 {0}
         run: |
-          make -C tools all test
+          mingw32-make -C tools all test
 
       - name: Integration Test (Quality Gate)
         shell: pwsh
