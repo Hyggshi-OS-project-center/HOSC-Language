@@ -152,5 +152,5 @@ print result;
 
 ---
 
-**See [HOSC_SYNTAX_REFERENCE.md](HOSC_SYNTAX_REFERENCE.md) for complete documentation.**
+**See [hosc_syntax_reference.md](hosc_syntax_reference.md) for complete documentation.**
 

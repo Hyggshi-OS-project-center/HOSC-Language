@@ -9,6 +9,7 @@
 #include "hvm.h"
 #include "runtime_gui.h"
 #include "hvm_internal.h"
+#include "hvm_platform.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -1137,7 +1138,7 @@ static void gui_run_loop_until_close(HVM_GuiRuntime *gui) {
 
         gui_apply_click_focus_from_commands(gui);
         gui_request_repaint(gui);
-        Sleep(16);
+        hvm_platform_sleep_ms(16);
     }
 }
 #else
@@ -1182,9 +1183,20 @@ static void gui_shutdown(HVM_GuiRuntime *gui) {
 typedef int (*HVM_GuiOpcodeHandler)(HVM_GuiRuntime *gui, HVM_VM *vm, const HVM_Instruction *instr);
 
 static int gui_op_create_window(HVM_GuiRuntime *gui, HVM_VM *vm, const HVM_Instruction *instr) {
-    int success = gui_create_window(gui, instr->operand.string_operand ? instr->operand.string_operand : "HOSC VM Window");
+    const char *title = instr && instr->operand.string_operand ? instr->operand.string_operand : "HOSC VM Window";
+    if (vm && vm->stack_top > 0) {
+        HVM_Value v = hvm_pop(vm);
+        if (v.type == HVM_TYPE_STRING) {
+            title = v.data.string_value ? v.data.string_value : "";
+        } else {
+            const char *converted = hvm_value_to_cstring_a(vm, v);
+            if (converted) title = converted;
+        }
+        hvm_free_value(&v);
+    }
+    int success = gui_create_window(gui, title);
     if (success) {
-        GUI_LOG("[GUI] real window: %s\n", instr->operand.string_operand ? instr->operand.string_operand : "HOSC VM Window");
+        GUI_LOG("[GUI] real window: %s\n", title);
     } else {
         g_gui.using_real = 0;
         g_gui.running = 1;
@@ -1195,7 +1207,7 @@ static int gui_op_create_window(HVM_GuiRuntime *gui, HVM_VM *vm, const HVM_Instr
         gui_reset_style_defaults(gui);
         g_gui.last_tick = (uint64_t)gui_now_ms();
         g_gui.frame_index = 1;
-        GUI_LOG("[GUI] window (console fallback): %s\n", instr->operand.string_operand ? instr->operand.string_operand : "HOSC VM Window");
+        GUI_LOG("[GUI] window (console fallback): %s\n", title);
     }
     hvm_push_bool(vm, success);
     return 1;

@@ -1,7 +1,7 @@
 # HOSC Framework
 
-`framework/` is a standalone runtime layer for GUI/event demos.
-It is separate from the main `hosc -> bytecode -> hvm` pipeline, and is useful for testing framework-level APIs quickly.
+`framework/` is a GUI demo runner built on the main `hosc -> bytecode -> hvm` pipeline.
+It uses runtime services for GUI calls so the VM stays platform-independent.
 
 ## What it supports
 
@@ -30,16 +30,10 @@ func main() {
 
 ## Build
 
-### Windows (PowerShell, GCC in PATH)
-
-```powershell
-gcc -Wall -Wextra -std=c99 -O2 -Iframework\include -o framework\bin\hosc_framework.exe framework\src\hosc_framework.c framework\src\hosc_runtime.c framework\src\hosc_modules.c -luser32 -lgdi32 -lkernel32
-```
-
 ### Makefile
 
 ```bash
-make -f framework/Makefile.framework framework
+make -f framework/makefile framework
 ```
 
 ## Run
@@ -57,4 +51,5 @@ Quick non-blocking smoke example:
 ## Notes
 
 - Framework GUI uses Win32 backend when available, with console fallback.
+- Legacy framework runtime sources live under `framework/legacy` and are not built by default.
 - For production language flow, prefer `tools/bin/hosc.exe run <file.hosc>` (compiler + HVM path).

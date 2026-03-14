@@ -5,30 +5,20 @@
 #include "ast.h"
 #include "arena.h"
 
-static Arena* g_ast_arena = NULL;
-
-void ast_set_arena(Arena* arena) { g_ast_arena = arena; }
-Arena* ast_get_arena(void) { return g_ast_arena; }
-void ast_release_arena(void) {
-    if (g_ast_arena) {
-        arena_destroy(g_ast_arena);
-        g_ast_arena = NULL;
-    }
-}
-
-ASTNode* create_ast_node(ASTNodeType type) {
-    ASTNode* node = g_ast_arena ? (ASTNode*)arena_alloc(g_ast_arena, sizeof(ASTNode)) : (ASTNode*)calloc(1, sizeof(ASTNode));
+ASTNode* create_ast_node(Arena* arena, ASTNodeType type) {
+    ASTNode* node = arena ? (ASTNode*)arena_alloc(arena, sizeof(ASTNode)) : (ASTNode*)calloc(1, sizeof(ASTNode));
     if (!node) return NULL;
     memset(node, 0, sizeof(ASTNode));
+    node->arena = arena;
     node->type = type;
     return node;
 }
 
-ASTNodeList* ast_list_append(ASTNodeList* head, ASTNode* node) {
+ASTNodeList* ast_list_append(Arena* arena, ASTNodeList* head, ASTNode* node) {
     ASTNodeList* item;
     ASTNodeList* cursor;
     if (!node) return head;
-    item = g_ast_arena ? (ASTNodeList*)arena_alloc(g_ast_arena, sizeof(ASTNodeList)) : (ASTNodeList*)calloc(1, sizeof(ASTNodeList));
+    item = arena ? (ASTNodeList*)arena_alloc(arena, sizeof(ASTNodeList)) : (ASTNodeList*)calloc(1, sizeof(ASTNodeList));
     if (!item) return head;
     memset(item, 0, sizeof(ASTNodeList));
     item->node = node;
@@ -39,12 +29,12 @@ ASTNodeList* ast_list_append(ASTNodeList* head, ASTNode* node) {
     return head;
 }
 
-static void free_list(ASTNodeList* list) {
+static void free_list(Arena* arena, ASTNodeList* list) {
     ASTNodeList* cursor = list;
     while (cursor) {
         ASTNodeList* next = cursor->next;
         if (cursor->node) free_ast(cursor->node);
-        if (!g_ast_arena) free(cursor);
+        if (!arena) free(cursor);
         cursor = next;
     }
 }
@@ -52,7 +42,7 @@ static void free_list(ASTNodeList* list) {
 void free_ast(ASTNode* node) {
     size_t i;
     if (!node) return;
-    if (g_ast_arena) return; // arena will be released once after compile
+    if (node->arena) return; // arena will be released via ast_destroy
 
     switch (node->type) {
         case AST_PACKAGE:
@@ -72,7 +62,7 @@ void free_ast(ASTNode* node) {
             free_ast(node->data.function.body);
             break;
         case AST_BLOCK:
-            free_list(node->data.block.statements);
+            free_list(NULL, node->data.block.statements);
             break;
         case AST_VARIABLE_DECLARATION:
             free(node->data.variable_declaration.identifier);
@@ -87,7 +77,7 @@ void free_ast(ASTNode* node) {
             break;
         case AST_CALL_EXPR:
             free(node->data.call_expr.callee);
-            free_list(node->data.call_expr.arguments);
+            free_list(NULL, node->data.call_expr.arguments);
             break;
         case AST_UNARY_OP:
             free_ast(node->data.unary_op.operand);
@@ -136,7 +126,7 @@ void free_ast(ASTNode* node) {
             break;
         case AST_PROGRAM:
             if (node->data.program.package) free_ast(node->data.program.package);
-            free_list(node->data.program.declarations);
+            free_list(NULL, node->data.program.declarations);
             break;
         case AST_NUMBER:
         case AST_FLOAT:
@@ -147,5 +137,16 @@ void free_ast(ASTNode* node) {
     }
 
     free(node);
+}
+
+void ast_destroy(ASTNode* root) {
+    Arena* arena;
+    if (!root) return;
+    arena = root->arena;
+    if (arena) {
+        arena_destroy(arena);
+        return;
+    }
+    free_ast(root);
 }
 

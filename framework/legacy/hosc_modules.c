@@ -1,4 +1,4 @@
-/* hosc_modules.c - HOSC source file */
+/* hosc_modules.c - Legacy framework module registry (deprecated) */
 
 #include "hosc_runtime.h"
 

@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <time.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -26,12 +27,20 @@ static int str_eq_ci(const char *a, const char *b) {
     return *a == '\0' && *b == '\0';
 }
 
+static int is_gui_native_name(const char *name) {
+    if (!name) return 0;
+    return strncmp(name, "gui.", 4) == 0;
+}
+
 static int bytecode_has_gui_opcodes(const HVM_Instruction *code, size_t count) {
     size_t i;
     if (!code) return 0;
 
     for (i = 0; i < count; i++) {
         HVM_Opcode op = code[i].opcode;
+        if (op == HVM_CALL_NATIVE && is_gui_native_name(code[i].operand.string_operand)) {
+            return 1;
+        }
         if (op == HVM_CREATE_WINDOW ||
             op == HVM_DRAW_TEXT ||
             op == HVM_DRAW_BUTTON ||
@@ -68,5 +77,17 @@ void hvm_platform_hide_console_if_needed(const HVM_Instruction *code, size_t cou
 #else
     (void)code;
     (void)count;
+#endif
+}
+
+void hvm_platform_sleep_ms(int ms) {
+    if (ms <= 0) return;
+#ifdef _WIN32
+    Sleep((DWORD)ms);
+#else
+    struct timespec req;
+    req.tv_sec = ms / 1000;
+    req.tv_nsec = (long)(ms % 1000) * 1000000L;
+    nanosleep(&req, NULL);
 #endif
 }

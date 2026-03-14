@@ -6,24 +6,10 @@
 #include "lexer.h"
 #include "parser.h"
 #include "codegen.h"
-#include "runtime.h"
-
-static char *read_file(const char *filename) {
-    FILE *f = fopen(filename, "rb");
-    if (!f) return NULL;
-    fseek(f, 0, SEEK_END);
-    size_t len = ftell(f);
-    rewind(f);
-    char *buf = malloc(len + 1);
-    if (!buf) {
-        fclose(f);
-        return NULL;
-    }
-    fread(buf, 1, len, f);
-    buf[len] = '\0';
-    fclose(f);
-    return buf;
-}
+#include "hvm.h"
+#include "hvm_compiler.h"
+#include "hvm_platform.h"
+#include "file_utils.h"
 
 static void print_usage(const char *exe) {
     fprintf(stderr, "Usage:\n");
@@ -44,7 +30,7 @@ int main(int argc, char **argv) {
     const char *command = argv[1];
     const char *path = argv[2];
 
-    char *source = read_file(path);
+    char *source = hosc_read_text_file(path, NULL);
     if (!source) {
         fprintf(stderr, "Could not open file: %s\n", path);
         return 1;
@@ -85,18 +71,46 @@ int main(int argc, char **argv) {
     }
 
     if (exec_mode) {
-        /* Execute directly using runtime */
+        /* Execute using HVM pipeline */
         if (debug) {
-            fprintf(stderr, "[DEBUG] Executing AST directly...\n");
+            fprintf(stderr, "[DEBUG] Executing via HVM pipeline...\n");
         }
-        runtime_execute(ast);
+        HVM_VM *vm = hvm_create();
+        HVM_Compiler *compiler = vm ? hvm_compiler_create(vm) : NULL;
+        if (!vm || !compiler) {
+            fprintf(stderr, "Error: failed to initialize HVM runtime\n");
+            if (compiler) hvm_compiler_destroy(compiler);
+            if (vm) hvm_destroy(vm);
+            ast_destroy(ast);
+            free(source);
+            return 1;
+        }
+        if (!hvm_compiler_compile_ast(compiler, ast) || hvm_compiler_has_errors(compiler)) {
+            hvm_compiler_print_errors(compiler);
+            hvm_compiler_destroy(compiler);
+            hvm_destroy(vm);
+            ast_destroy(ast);
+            free(source);
+            return 1;
+        }
+        hvm_platform_hide_console_if_needed(vm->instructions, vm->instruction_count);
+        if (!hvm_run(vm)) {
+            const char *msg = hvm_get_error(vm);
+            fprintf(stderr, "VM execution failed%s%s\n", msg ? ": " : "", msg ? msg : "");
+            hvm_compiler_destroy(compiler);
+            hvm_destroy(vm);
+            ast_destroy(ast);
+            free(source);
+            return 1;
+        }
+        hvm_compiler_destroy(compiler);
+        hvm_destroy(vm);
     } else {
         /* Generate C code */
         char *output = codegen_generate(ast);
         if (!output) {
             fprintf(stderr, "Error: codegen failed\n");
-            free_ast(ast);
-            ast_release_arena();
+            ast_destroy(ast);
             free(source);
             return 1;
         }
@@ -104,8 +118,7 @@ int main(int argc, char **argv) {
         free(output);
     }
 
-    free_ast(ast);
-    ast_release_arena();
+    ast_destroy(ast);
     free(source);
     return 0;
 }

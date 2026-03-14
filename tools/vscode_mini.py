@@ -156,7 +156,7 @@ class HOSCIDEMain(QMainWindow):
             self.project_root / "framework" / "examples",
             self.project_root / "examples",
         ]
-        self.compiler = self.project_root / "tools" / "bin" / "hosc-compiler.exe"
+        self.compiler = self.project_root / "tools" / "bin" / "hosc_compiler.exe"
         self.runtime = self.project_root / "tools" / "bin" / "hvm.exe"
         self.cli = self.project_root / "tools" / "bin" / "hosc.exe"
         self.build_dir = self.project_root / "build"
@@ -1011,8 +1011,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-

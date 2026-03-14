@@ -20,7 +20,7 @@ static ASTNode* first_decl(ASTNode* program) {
 
 static void free_program(ASTNode *program) {
     free_ast(program);
-    ast_release_arena();
+    ast_destroy(ast);
 }
 
 static ASTNode* find_function(ASTNode *program, const char *name) {
@@ -232,5 +232,6 @@ int main(void) {
     printf("All tests passed.\n");
     return 0;
 }
+
 
 

@@ -10,6 +10,7 @@ extern "C" {
 #endif
 
 void hvm_platform_hide_console_if_needed(const HVM_Instruction* code, size_t count);
+void hvm_platform_sleep_ms(int ms);
 
 #ifdef __cplusplus
 }

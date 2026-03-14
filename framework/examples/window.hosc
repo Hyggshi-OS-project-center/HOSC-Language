@@ -1,4 +1,4 @@
-/* window.hosc - HOSC source file */
+// window.hosc - HOSC source file for a simple window with custom buttons. 
 
 package main
 

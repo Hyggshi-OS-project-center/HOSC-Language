@@ -52,8 +52,7 @@ int main() {
         if (hvm_compiler_has_errors(compiler)) {
             hvm_compiler_print_errors(compiler);
         }
-        free_ast(ast);
-    ast_release_arena();
+        ast_destroy(ast);
     hvm_compiler_destroy(compiler);
         hvm_destroy(vm);
         return 1;
@@ -84,11 +83,11 @@ int main() {
     hvm_print_stack(vm);
     
     // Cleanup
-    free_ast(ast);
-    ast_release_arena();
+    ast_destroy(ast);
     hvm_compiler_destroy(compiler);
     hvm_destroy(vm);
     
     return 0;
 }
+
 

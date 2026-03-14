@@ -197,6 +197,6 @@ All implementations share the same core components:
 
 The different implementations provide different interfaces to the same powerful HOSC language engine.
 
-## 📝 License
+## License
 
 This project is part of the HOSC (Hyggshi OS Code) language implementation.

@@ -1,4 +1,4 @@
-/* hosc_gui.c - GUI backend for HOSC framework runtime */
+/* hosc_gui.c - Legacy GUI backend for HOSC framework runtime (deprecated) */
 
 #include "hosc_runtime.h"
 

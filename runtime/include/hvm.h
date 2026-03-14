@@ -11,6 +11,7 @@ extern "C" {
 #include <stddef.h>
 
 struct HVM_RuntimeServices;
+struct HVM_Bytecode;
 
 #define HVM_STACK_SIZE 1024
 #define HVM_CALL_STACK_SIZE 512
@@ -69,6 +70,7 @@ typedef enum {
     HVM_SLEEP,
     HVM_BEEP,
 
+    /* Legacy GUI opcodes (deprecated; use HVM_CALL_NATIVE) */
     HVM_CREATE_WINDOW,
     HVM_DRAW_TEXT,
     HVM_DRAW_BUTTON,
@@ -110,6 +112,7 @@ typedef enum {
     HVM_TEXTAREA_SET,
     HVM_EXEC_COMMAND,
 
+    HVM_CALL_NATIVE,
     HVM_OPCODE_COUNT
 } HVM_Opcode;
 
@@ -148,6 +151,7 @@ typedef struct {
     size_t local_count;
 } HVM_Function;
 
+/* Legacy GC node (deprecated; retained for ABI compatibility). */
 typedef struct HVM_GCObject {
     char *ptr;
     size_t size;
@@ -168,6 +172,7 @@ typedef struct {
     HVM_Instruction* instructions;
     size_t instruction_count;
     size_t instruction_capacity;
+    struct HVM_Bytecode *bytecode;
 
     size_t pc;
 
@@ -190,12 +195,14 @@ typedef struct {
     char* scratch_concat;
     size_t scratch_concat_cap;
 
+    /* Legacy GC fields (unused by C++ heap-backed GC). */
     HVM_GCObject *gc_objects;
     size_t gc_object_count;
     size_t gc_bytes;
     size_t gc_next_collection;
     int gc_enabled;
     int gc_pending;
+    void *gc_heap;
 } HVM_VM;
 
 HVM_VM* hvm_create(void);

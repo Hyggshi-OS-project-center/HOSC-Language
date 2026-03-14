@@ -877,9 +877,9 @@ HOSC performs automatic type coercion in the following cases:
 
 ## References
 
-- [HOSC Language README](README.md)
-- [HOSC Virtual Machine Documentation](HVM_README.md)
-- [HOSC Framework Guide](framework/docs/README_FRAMEWORK.md)
+- [HOSC Language README](readme.md)
+- [HOSC Virtual Machine Documentation](hvm_readme.md)
+- [HOSC Framework Guide](framework/docs/readme_framework.md)
 
 ---
 

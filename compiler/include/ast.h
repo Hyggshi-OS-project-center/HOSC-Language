@@ -46,6 +46,7 @@ typedef struct ASTNodeList {
 } ASTNodeList;
 
 typedef struct ASTNode {
+    Arena* arena;
     ASTNodeType type;
     struct ASTNode *next;
     union {
@@ -75,13 +76,11 @@ typedef struct ASTNode {
     } data;
 } ASTNode;
 
-ASTNode* create_ast_node(ASTNodeType type);
+ASTNode* create_ast_node(Arena* arena, ASTNodeType type);
 ASTNode* parser_parse(const char* source);
-ASTNodeList* ast_list_append(ASTNodeList* head, ASTNode* node);
+ASTNodeList* ast_list_append(Arena* arena, ASTNodeList* head, ASTNode* node);
 void free_ast(ASTNode* node);
-void ast_set_arena(Arena* arena);
-Arena* ast_get_arena(void);
-void ast_release_arena(void);
+void ast_destroy(ASTNode* root);
 
 #ifdef __cplusplus
 }

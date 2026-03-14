@@ -102,6 +102,7 @@ static char *make_scoped_name(const char *function_name, const char *name) {
 static int emit_int(HVM_Compiler* c, HVM_Opcode op, int64_t v) { return hvm_add_instruction(c->vm, op, v); }
 static int emit_float(HVM_Compiler* c, HVM_Opcode op, double v) { return hvm_add_instruction_float(c->vm, op, v); }
 static int emit_str(HVM_Compiler* c, HVM_Opcode op, const char* s) { return hvm_add_instruction_string(c->vm, op, s); }
+static int emit_native(HVM_Compiler* c, const char* name) { return hvm_add_instruction_string(c->vm, HVM_CALL_NATIVE, name); }
 static int emit_jump(HVM_Compiler* c, HVM_Opcode op) {
     size_t idx = c->vm->instruction_count;
     if (!emit_int(c, op, 0)) return -1;
@@ -418,7 +419,7 @@ static int compile_call_expression(HVM_Compiler *compiler, ASTNode *call_expr) {
             if (!compile_expression(compiler, arg_node->node)) return 0;
             if (!emit_int(compiler, HVM_POP, 0)) return 0;
         }
-        return emit_int(compiler, HVM_LOOP, 0);
+        return emit_native(compiler, "gui.loop");
     }
 
     if (strcmp(name, "warn") == 0 || strcmp(name, "warning") == 0 || strcmp(name, "win32.warning") == 0 || strcmp(name, "win32_warning") == 0) {
@@ -450,7 +451,7 @@ static int compile_call_expression(HVM_Compiler *compiler, ASTNode *call_expr) {
             else { if (!emit_int(compiler, HVM_PUSH_INT, 0)) return 0; }
         }
         for (; a; a = a->next) { if (!compile_expression(compiler, a->node)) return 0; if (!emit_int(compiler, HVM_POP, 0)) return 0; }
-        return emit_int(compiler, HVM_CLEAR, 0);
+        return emit_native(compiler, "gui.clear");
     }
 
     if (strcmp(name, "bgcolor") == 0 || strcmp(name, "background") == 0) {
@@ -460,7 +461,7 @@ static int compile_call_expression(HVM_Compiler *compiler, ASTNode *call_expr) {
             else { if (!emit_int(compiler, HVM_PUSH_INT, 0)) return 0; }
         }
         for (; a; a = a->next) { if (!compile_expression(compiler, a->node)) return 0; if (!emit_int(compiler, HVM_POP, 0)) return 0; }
-        return emit_int(compiler, HVM_SET_BG_COLOR, 0);
+        return emit_native(compiler, "gui.set_bg_color");
     }
 
     if (strcmp(name, "color") == 0 || strcmp(name, "fgcolor") == 0) {
@@ -470,7 +471,7 @@ static int compile_call_expression(HVM_Compiler *compiler, ASTNode *call_expr) {
             else { if (!emit_int(compiler, HVM_PUSH_INT, 0)) return 0; }
         }
         for (; a; a = a->next) { if (!compile_expression(compiler, a->node)) return 0; if (!emit_int(compiler, HVM_POP, 0)) return 0; }
-        return emit_int(compiler, HVM_SET_COLOR, 0);
+        return emit_native(compiler, "gui.set_color");
     }
 
     if (strcmp(name, "font") == 0 || strcmp(name, "font_size") == 0) {
@@ -478,7 +479,7 @@ static int compile_call_expression(HVM_Compiler *compiler, ASTNode *call_expr) {
         if (a) { if (!compile_expression(compiler, a->node)) return 0; a = a->next; }
         else { if (!emit_int(compiler, HVM_PUSH_INT, 16)) return 0; }
         for (; a; a = a->next) { if (!compile_expression(compiler, a->node)) return 0; if (!emit_int(compiler, HVM_POP, 0)) return 0; }
-        return emit_int(compiler, HVM_SET_FONT_SIZE, 0);
+        return emit_native(compiler, "gui.set_font_size");
     }
 
     if (strcmp(name, "text") == 0 || strcmp(name, "label") == 0 || strcmp(name, "draw_text") == 0) {
@@ -490,7 +491,7 @@ static int compile_call_expression(HVM_Compiler *compiler, ASTNode *call_expr) {
         if (a) { if (!compile_expression(compiler, a->node)) return 0; a = a->next; }
         else { if (!emit_str(compiler, HVM_PUSH_STRING, "")) return 0; }
         for (; a; a = a->next) { if (!compile_expression(compiler, a->node)) return 0; if (!emit_int(compiler, HVM_POP, 0)) return 0; }
-        return emit_int(compiler, HVM_DRAW_TEXT, 0);
+        return emit_native(compiler, "gui.draw_text");
     }
 
     if (strcmp(name, "button") == 0) {
@@ -509,7 +510,7 @@ static int compile_call_expression(HVM_Compiler *compiler, ASTNode *call_expr) {
                 if (!compile_expression(compiler, a->node)) return 0;
                 if (!emit_int(compiler, HVM_POP, 0)) return 0;
             }
-            return emit_int(compiler, HVM_DRAW_BUTTON_STATE, 0);
+            return emit_native(compiler, "gui.draw_button_state");
         }
 
         for (i = 0; i < 4; i++) {
@@ -519,7 +520,7 @@ static int compile_call_expression(HVM_Compiler *compiler, ASTNode *call_expr) {
         if (a) { if (!compile_expression(compiler, a->node)) return 0; a = a->next; }
         else { if (!emit_str(compiler, HVM_PUSH_STRING, "")) return 0; }
         for (; a; a = a->next) { if (!compile_expression(compiler, a->node)) return 0; if (!emit_int(compiler, HVM_POP, 0)) return 0; }
-        return emit_int(compiler, HVM_DRAW_BUTTON, 0);
+        return emit_native(compiler, "gui.draw_button");
     }
 
     if (strcmp(name, "input") == 0) {
@@ -538,7 +539,7 @@ static int compile_call_expression(HVM_Compiler *compiler, ASTNode *call_expr) {
                 if (!compile_expression(compiler, a->node)) return 0;
                 if (!emit_int(compiler, HVM_POP, 0)) return 0;
             }
-            return emit_int(compiler, HVM_DRAW_INPUT_STATE, 0);
+            return emit_native(compiler, "gui.draw_input_state");
         }
 
         for (i = 0; i < 3; i++) {
@@ -548,7 +549,7 @@ static int compile_call_expression(HVM_Compiler *compiler, ASTNode *call_expr) {
         if (a) { if (!compile_expression(compiler, a->node)) return 0; a = a->next; }
         else { if (!emit_str(compiler, HVM_PUSH_STRING, "")) return 0; }
         for (; a; a = a->next) { if (!compile_expression(compiler, a->node)) return 0; if (!emit_int(compiler, HVM_POP, 0)) return 0; }
-        return emit_int(compiler, HVM_DRAW_INPUT, 0);
+        return emit_native(compiler, "gui.draw_input");
     }
 
     if (strcmp(name, "textarea") == 0 || strcmp(name, "code_editor") == 0 || strcmp(name, "editor") == 0) {
@@ -564,7 +565,7 @@ static int compile_call_expression(HVM_Compiler *compiler, ASTNode *call_expr) {
         if (a) { if (!compile_expression(compiler, a->node)) return 0; a = a->next; }
         else { if (!emit_str(compiler, HVM_PUSH_STRING, "main_textarea")) return 0; }
         for (; a; a = a->next) { if (!compile_expression(compiler, a->node)) return 0; if (!emit_int(compiler, HVM_POP, 0)) return 0; }
-        return emit_int(compiler, HVM_DRAW_TEXTAREA, 0);
+        return emit_native(compiler, "gui.draw_textarea");
     }
 
     if (strcmp(name, "image") == 0 || strcmp(name, "sprite") == 0) {
@@ -576,21 +577,21 @@ static int compile_call_expression(HVM_Compiler *compiler, ASTNode *call_expr) {
         if (a) { if (!compile_expression(compiler, a->node)) return 0; a = a->next; }
         else { if (!emit_str(compiler, HVM_PUSH_STRING, "[img]")) return 0; }
         for (; a; a = a->next) { if (!compile_expression(compiler, a->node)) return 0; if (!emit_int(compiler, HVM_POP, 0)) return 0; }
-        return emit_int(compiler, HVM_DRAW_IMAGE, 0);
+        return emit_native(compiler, "gui.draw_image");
     }
 
-    if (strcmp(name, "mouse_x") == 0) return emit_int(compiler, HVM_GET_MOUSE_X, 0);
-    if (strcmp(name, "mouse_y") == 0) return emit_int(compiler, HVM_GET_MOUSE_Y, 0);
-    if (strcmp(name, "mouse_down") == 0) return emit_int(compiler, HVM_IS_MOUSE_DOWN, 0);
-    if (strcmp(name, "mouse_up") == 0) return emit_int(compiler, HVM_WAS_MOUSE_UP, 0);
-    if (strcmp(name, "mouse_click") == 0 || strcmp(name, "mouse_clicked") == 0) return emit_int(compiler, HVM_WAS_MOUSE_CLICK, 0);
+    if (strcmp(name, "mouse_x") == 0) return emit_native(compiler, "gui.get_mouse_x");
+    if (strcmp(name, "mouse_y") == 0) return emit_native(compiler, "gui.get_mouse_y");
+    if (strcmp(name, "mouse_down") == 0) return emit_native(compiler, "gui.is_mouse_down");
+    if (strcmp(name, "mouse_up") == 0) return emit_native(compiler, "gui.was_mouse_up");
+    if (strcmp(name, "mouse_click") == 0 || strcmp(name, "mouse_clicked") == 0) return emit_native(compiler, "gui.was_mouse_click");
 
     if (strcmp(name, "mouse_hover") == 0) {
         arg_node = call_expr->data.call_expr.arguments;
         if (arg_node) { if (!compile_expression(compiler, arg_node->node)) return 0; arg_node = arg_node->next; }
         else { if (!emit_str(compiler, HVM_PUSH_STRING, "")) return 0; }
         for (; arg_node; arg_node = arg_node->next) { if (!compile_expression(compiler, arg_node->node)) return 0; if (!emit_int(compiler, HVM_POP, 0)) return 0; }
-        return emit_int(compiler, HVM_IS_MOUSE_HOVER, 0);
+        return emit_native(compiler, "gui.is_mouse_hover");
     }
 
     if (strcmp(name, "key_down") == 0) {
@@ -598,7 +599,7 @@ static int compile_call_expression(HVM_Compiler *compiler, ASTNode *call_expr) {
         if (arg_node) { if (!compile_expression(compiler, arg_node->node)) return 0; arg_node = arg_node->next; }
         else { if (!emit_int(compiler, HVM_PUSH_INT, 0)) return 0; }
         for (; arg_node; arg_node = arg_node->next) { if (!compile_expression(compiler, arg_node->node)) return 0; if (!emit_int(compiler, HVM_POP, 0)) return 0; }
-        return emit_int(compiler, HVM_IS_KEY_DOWN, 0);
+        return emit_native(compiler, "gui.is_key_down");
     }
 
     if (strcmp(name, "key_press") == 0 || strcmp(name, "key_pressed") == 0) {
@@ -606,10 +607,10 @@ static int compile_call_expression(HVM_Compiler *compiler, ASTNode *call_expr) {
         if (arg_node) { if (!compile_expression(compiler, arg_node->node)) return 0; arg_node = arg_node->next; }
         else { if (!emit_int(compiler, HVM_PUSH_INT, 0)) return 0; }
         for (; arg_node; arg_node = arg_node->next) { if (!compile_expression(compiler, arg_node->node)) return 0; if (!emit_int(compiler, HVM_POP, 0)) return 0; }
-        return emit_int(compiler, HVM_WAS_KEY_PRESS, 0);
+        return emit_native(compiler, "gui.was_key_press");
     }
 
-    if (strcmp(name, "delta") == 0 || strcmp(name, "dt") == 0) return emit_int(compiler, HVM_DELTA_TIME, 0);
+    if (strcmp(name, "delta") == 0 || strcmp(name, "dt") == 0) return emit_native(compiler, "gui.delta_time");
 
     if (strcmp(name, "nl") == 0 || strcmp(name, "newline") == 0) {
         for (arg_node = call_expr->data.call_expr.arguments; arg_node; arg_node = arg_node->next) {
@@ -626,7 +627,7 @@ static int compile_call_expression(HVM_Compiler *compiler, ASTNode *call_expr) {
             else { if (!emit_int(compiler, HVM_PUSH_INT, 0)) return 0; }
         }
         for (; a; a = a->next) { if (!compile_expression(compiler, a->node)) return 0; if (!emit_int(compiler, HVM_POP, 0)) return 0; }
-        return emit_int(compiler, HVM_LAYOUT_RESET, 0);
+        return emit_native(compiler, "gui.layout_reset");
     }
 
     if (strcmp(name, "layout_next") == 0) {
@@ -634,7 +635,7 @@ static int compile_call_expression(HVM_Compiler *compiler, ASTNode *call_expr) {
         if (arg_node) { if (!compile_expression(compiler, arg_node->node)) return 0; arg_node = arg_node->next; }
         else { if (!emit_int(compiler, HVM_PUSH_INT, 24)) return 0; }
         for (; arg_node; arg_node = arg_node->next) { if (!compile_expression(compiler, arg_node->node)) return 0; if (!emit_int(compiler, HVM_POP, 0)) return 0; }
-        return emit_int(compiler, HVM_LAYOUT_NEXT, 0);
+        return emit_native(compiler, "gui.layout_next");
     }
 
     if (strcmp(name, "layout_row") == 0) {
@@ -642,7 +643,7 @@ static int compile_call_expression(HVM_Compiler *compiler, ASTNode *call_expr) {
         if (arg_node) { if (!compile_expression(compiler, arg_node->node)) return 0; arg_node = arg_node->next; }
         else { if (!emit_int(compiler, HVM_PUSH_INT, 1)) return 0; }
         for (; arg_node; arg_node = arg_node->next) { if (!compile_expression(compiler, arg_node->node)) return 0; if (!emit_int(compiler, HVM_POP, 0)) return 0; }
-        return emit_int(compiler, HVM_LAYOUT_ROW, 0);
+        return emit_native(compiler, "gui.layout_row");
     }
 
     if (strcmp(name, "layout_column") == 0) {
@@ -650,7 +651,7 @@ static int compile_call_expression(HVM_Compiler *compiler, ASTNode *call_expr) {
         if (arg_node) { if (!compile_expression(compiler, arg_node->node)) return 0; arg_node = arg_node->next; }
         else { if (!emit_int(compiler, HVM_PUSH_INT, 180)) return 0; }
         for (; arg_node; arg_node = arg_node->next) { if (!compile_expression(compiler, arg_node->node)) return 0; if (!emit_int(compiler, HVM_POP, 0)) return 0; }
-        return emit_int(compiler, HVM_LAYOUT_COLUMN, 0);
+        return emit_native(compiler, "gui.layout_column");
     }
 
     if (strcmp(name, "layout_grid") == 0) {
@@ -662,7 +663,7 @@ static int compile_call_expression(HVM_Compiler *compiler, ASTNode *call_expr) {
         if (a) { if (!compile_expression(compiler, a->node)) return 0; a = a->next; }
         else { if (!emit_int(compiler, HVM_PUSH_INT, 32)) return 0; }
         for (; a; a = a->next) { if (!compile_expression(compiler, a->node)) return 0; if (!emit_int(compiler, HVM_POP, 0)) return 0; }
-        return emit_int(compiler, HVM_LAYOUT_GRID, 0);
+        return emit_native(compiler, "gui.layout_grid");
     }
 
     if (strcmp(name, "menu_notepad") == 0 || strcmp(name, "menu_setup") == 0) {
@@ -670,7 +671,7 @@ static int compile_call_expression(HVM_Compiler *compiler, ASTNode *call_expr) {
             if (!compile_expression(compiler, arg_node->node)) return 0;
             if (!emit_int(compiler, HVM_POP, 0)) return 0;
         }
-        return emit_int(compiler, HVM_MENU_SETUP_NOTEPAD, 0);
+        return emit_native(compiler, "gui.menu_setup_notepad");
     }
 
     if (strcmp(name, "menu_event") == 0) {
@@ -678,7 +679,7 @@ static int compile_call_expression(HVM_Compiler *compiler, ASTNode *call_expr) {
             if (!compile_expression(compiler, arg_node->node)) return 0;
             if (!emit_int(compiler, HVM_POP, 0)) return 0;
         }
-        return emit_int(compiler, HVM_MENU_EVENT, 0);
+        return emit_native(compiler, "gui.menu_event");
     }
 
     if (strcmp(name, "scroll_range") == 0) {
@@ -689,7 +690,7 @@ static int compile_call_expression(HVM_Compiler *compiler, ASTNode *call_expr) {
             if (!compile_expression(compiler, arg_node->node)) return 0;
             if (!emit_int(compiler, HVM_POP, 0)) return 0;
         }
-        return emit_int(compiler, HVM_SCROLL_SET_RANGE, 0);
+        return emit_native(compiler, "gui.scroll_set_range");
     }
 
     if (strcmp(name, "scroll_y") == 0) {
@@ -697,7 +698,7 @@ static int compile_call_expression(HVM_Compiler *compiler, ASTNode *call_expr) {
             if (!compile_expression(compiler, arg_node->node)) return 0;
             if (!emit_int(compiler, HVM_POP, 0)) return 0;
         }
-        return emit_int(compiler, HVM_SCROLL_Y, 0);
+        return emit_native(compiler, "gui.scroll_y");
     }
 
     if (strcmp(name, "open_file_dialog") == 0 || strcmp(name, "open_file") == 0) {
@@ -705,7 +706,7 @@ static int compile_call_expression(HVM_Compiler *compiler, ASTNode *call_expr) {
             if (!compile_expression(compiler, arg_node->node)) return 0;
             if (!emit_int(compiler, HVM_POP, 0)) return 0;
         }
-        return emit_int(compiler, HVM_FILE_OPEN_DIALOG, 0);
+        return emit_native(compiler, "gui.file_open_dialog");
     }
 
     if (strcmp(name, "save_file_dialog") == 0 || strcmp(name, "save_file") == 0) {
@@ -713,7 +714,7 @@ static int compile_call_expression(HVM_Compiler *compiler, ASTNode *call_expr) {
             if (!compile_expression(compiler, arg_node->node)) return 0;
             if (!emit_int(compiler, HVM_POP, 0)) return 0;
         }
-        return emit_int(compiler, HVM_FILE_SAVE_DIALOG, 0);
+        return emit_native(compiler, "gui.file_save_dialog");
     }
 
     if (strcmp(name, "file_read") == 0) {
@@ -750,7 +751,7 @@ static int compile_call_expression(HVM_Compiler *compiler, ASTNode *call_expr) {
             if (!compile_expression(compiler, a->node)) return 0;
             if (!emit_int(compiler, HVM_POP, 0)) return 0;
         }
-        return emit_int(compiler, HVM_INPUT_SET, 0);
+        return emit_native(compiler, "gui.input_set");
     }
 
     if (strcmp(name, "textarea_set") == 0 || strcmp(name, "editor_set_text") == 0 || strcmp(name, "code_editor_set") == 0) {
@@ -763,7 +764,7 @@ static int compile_call_expression(HVM_Compiler *compiler, ASTNode *call_expr) {
             if (!compile_expression(compiler, a->node)) return 0;
             if (!emit_int(compiler, HVM_POP, 0)) return 0;
         }
-        return emit_int(compiler, HVM_TEXTAREA_SET, 0);
+        return emit_native(compiler, "gui.textarea_set");
     }
 
     if (strcmp(name, "file_write") == 0) {
@@ -992,13 +993,14 @@ static int compile_statement(HVM_Compiler* compiler, ASTNode* ast) {
             return emit_int(compiler, HVM_POP, 0);
 
         case AST_WINDOW_STMT:
-            return emit_str(compiler, HVM_CREATE_WINDOW, ast->data.window_stmt.title);
+            if (!emit_str(compiler, HVM_PUSH_STRING, ast->data.window_stmt.title)) return 0;
+            return emit_native(compiler, "gui.create_window");
 
         case AST_TEXT_STMT:
             if (!compile_expression(compiler, ast->data.text_stmt.x)) return 0;
             if (!compile_expression(compiler, ast->data.text_stmt.y)) return 0;
             if (!emit_str(compiler, HVM_PUSH_STRING, ast->data.text_stmt.msg)) return 0;
-            return emit_int(compiler, HVM_DRAW_TEXT, 0);
+            return emit_native(compiler, "gui.draw_text");
 
         case AST_IF: {
             int jmp_false;

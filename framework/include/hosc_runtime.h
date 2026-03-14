@@ -1,4 +1,4 @@
-/* hosc_runtime.h - HOSC source file */
+/* hosc_runtime.h - Legacy framework runtime API (deprecated; use HVM pipeline) */
 
 #ifndef HOSC_RUNTIME_H
 #define HOSC_RUNTIME_H

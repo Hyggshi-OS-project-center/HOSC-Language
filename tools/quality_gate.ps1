@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $buildScript = Join-Path $root 'tools\build.ps1'
 $hosc = Join-Path $root 'tools\bin\hosc.exe'
-$compiler = Join-Path $root 'tools\bin\hosc-compiler.exe'
+$compiler = Join-Path $root 'tools\bin\hosc_compiler.exe'
 $hvm = Join-Path $root 'tools\bin\hvm.exe'
 $gateDir = Join-Path $root 'build\quality_gate'
 

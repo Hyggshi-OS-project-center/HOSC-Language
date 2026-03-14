@@ -19,7 +19,9 @@ typedef struct VarType {
     struct VarType *next;
 } VarType;
 
-static VarType *g_var_types = NULL;
+typedef struct {
+    VarType *var_types;
+} CodegenContext;
 
 static int buf_init(Buffer *b, size_t cap) {
     b->data = (char *)malloc(cap);
@@ -61,24 +63,24 @@ static int buf_appendf(Buffer *b, const char *fmt, ...) {
     return 1;
 }
 
-static void clear_var_types(void) {
-    VarType *cur = g_var_types;
+static void clear_var_types(CodegenContext *ctx) {
+    VarType *cur = ctx ? ctx->var_types : NULL;
     while (cur) {
         VarType *next = cur->next;
         free(cur->name);
         free(cur);
         cur = next;
     }
-    g_var_types = NULL;
+    if (ctx) ctx->var_types = NULL;
 }
 
-static int remember_var_type(const char *name, const char *type_str) {
+static int remember_var_type(CodegenContext *ctx, const char *name, const char *type_str) {
     VarType *cur;
     VarType *node;
 
-    if (!name || !type_str) return 0;
+    if (!ctx || !name || !type_str) return 0;
 
-    cur = g_var_types;
+    cur = ctx->var_types;
     while (cur) {
         if (strcmp(cur->name, name) == 0) {
             cur->type_str = type_str;
@@ -95,13 +97,13 @@ static int remember_var_type(const char *name, const char *type_str) {
         return 0;
     }
     node->type_str = type_str;
-    node->next = g_var_types;
-    g_var_types = node;
+    node->next = ctx->var_types;
+    ctx->var_types = node;
     return 1;
 }
 
-static const char *lookup_var_type(const char *name) {
-    VarType *cur = g_var_types;
+static const char *lookup_var_type(CodegenContext *ctx, const char *name) {
+    VarType *cur = ctx ? ctx->var_types : NULL;
     while (cur) {
         if (strcmp(cur->name, name) == 0) return cur->type_str;
         cur = cur->next;
@@ -130,7 +132,7 @@ static const char *op_to_str(TokenType op) {
 
 static char *gen_expr(ASTNode *node);
 
-static const char *expr_c_type(ASTNode *expr) {
+static const char *expr_c_type(CodegenContext *ctx, ASTNode *expr) {
     const char *lt;
     const char *rt;
 
@@ -145,12 +147,12 @@ static const char *expr_c_type(ASTNode *expr) {
         case AST_BOOL:
             return "int";
         case AST_IDENTIFIER: {
-            const char *found = lookup_var_type(expr->data.identifier.name);
+            const char *found = lookup_var_type(ctx, expr->data.identifier.name);
             return found ? found : "int";
         }
         case AST_UNARY_OP:
             if (expr->data.unary_op.op == TOKEN_BANG) return "int";
-            return expr_c_type(expr->data.unary_op.operand);
+            return expr_c_type(ctx, expr->data.unary_op.operand);
         case AST_BINARY_OP:
             if (expr->data.binary_op.op == TOKEN_AND || expr->data.binary_op.op == TOKEN_OR ||
                 expr->data.binary_op.op == TOKEN_EQUAL_EQUAL || expr->data.binary_op.op == TOKEN_BANG_EQUAL ||
@@ -158,8 +160,8 @@ static const char *expr_c_type(ASTNode *expr) {
                 expr->data.binary_op.op == TOKEN_GREATER || expr->data.binary_op.op == TOKEN_GREATER_EQUAL) {
                 return "int";
             }
-            lt = expr_c_type(expr->data.binary_op.left);
-            rt = expr_c_type(expr->data.binary_op.right);
+            lt = expr_c_type(ctx, expr->data.binary_op.left);
+            rt = expr_c_type(ctx, expr->data.binary_op.right);
             if (strcmp(lt, "double") == 0 || strcmp(rt, "double") == 0) return "double";
             if (strcmp(lt, "const char *") == 0 || strcmp(rt, "const char *") == 0) return "const char *";
             return "int";
@@ -170,8 +172,8 @@ static const char *expr_c_type(ASTNode *expr) {
     }
 }
 
-static const char *print_fmt_for_expr(ASTNode *expr) {
-    const char *type_str = expr_c_type(expr);
+static const char *print_fmt_for_expr(CodegenContext *ctx, ASTNode *expr) {
+    const char *type_str = expr_c_type(ctx, expr);
     if (strcmp(type_str, "double") == 0) return "%f";
     if (strcmp(type_str, "const char *") == 0) return "%s";
     return "%d";
@@ -207,7 +209,7 @@ static char *escape_c_string(const char *src) {
     return out;
 }
 
-static char *gen_for_clause(ASTNode *node) {
+static char *gen_for_clause(CodegenContext *ctx, ASTNode *node) {
     if (!node) return strdup("");
 
     switch (node->type) {
@@ -217,7 +219,7 @@ static char *gen_for_clause(ASTNode *node) {
             char *out;
             int needed;
             if (!expr) return NULL;
-            type_str = expr_c_type(node->data.variable_declaration.value);
+            type_str = expr_c_type(ctx, node->data.variable_declaration.value);
             needed = snprintf(NULL, 0, "%s %s = %s", type_str, node->data.variable_declaration.identifier, expr);
             out = (char *)malloc((size_t)needed + 1);
             if (!out) {
@@ -226,7 +228,7 @@ static char *gen_for_clause(ASTNode *node) {
             }
             snprintf(out, (size_t)needed + 1, "%s %s = %s", type_str, node->data.variable_declaration.identifier, expr);
             free(expr);
-            if (!remember_var_type(node->data.variable_declaration.identifier, type_str)) {
+            if (!remember_var_type(ctx, node->data.variable_declaration.identifier, type_str)) {
                 free(out);
                 return NULL;
             }
@@ -396,20 +398,20 @@ static void build_indent(int indent, char *out, size_t out_size) {
     out[spaces] = '\0';
 }
 
-static int gen_statement(Buffer *b, ASTNode *stmt, int indent);
+static int gen_statement(CodegenContext *ctx, Buffer *b, ASTNode *stmt, int indent);
 
-static int gen_block(Buffer *b, ASTNode *block, int indent) {
+static int gen_block(CodegenContext *ctx, Buffer *b, ASTNode *block, int indent) {
     ASTNodeList *cur;
     if (!block || block->type != AST_BLOCK) return 0;
     cur = block->data.block.statements;
     while (cur) {
-        if (!gen_statement(b, cur->node, indent)) return 0;
+        if (!gen_statement(ctx, b, cur->node, indent)) return 0;
         cur = cur->next;
     }
     return 1;
 }
 
-static int gen_statement(Buffer *b, ASTNode *stmt, int indent) {
+static int gen_statement(CodegenContext *ctx, Buffer *b, ASTNode *stmt, int indent) {
     char pad[256];
     build_indent(indent, pad, sizeof(pad));
 
@@ -417,15 +419,15 @@ static int gen_statement(Buffer *b, ASTNode *stmt, int indent) {
 
     switch (stmt->type) {
         case AST_BLOCK:
-            return gen_block(b, stmt, indent);
+            return gen_block(ctx, b, stmt, indent);
 
         case AST_VARIABLE_DECLARATION: {
             char *expr = gen_expr(stmt->data.variable_declaration.value);
             const char *type_str;
             int ok;
             if (!expr) return 0;
-            type_str = expr_c_type(stmt->data.variable_declaration.value);
-            if (!remember_var_type(stmt->data.variable_declaration.identifier, type_str)) {
+            type_str = expr_c_type(ctx, stmt->data.variable_declaration.value);
+            if (!remember_var_type(ctx, stmt->data.variable_declaration.identifier, type_str)) {
                 free(expr);
                 return 0;
             }
@@ -445,7 +447,7 @@ static int gen_statement(Buffer *b, ASTNode *stmt, int indent) {
 
         case AST_PRINT_STATEMENT: {
             ASTNode *val = stmt->data.print_statement.expression;
-            const char *fmt = print_fmt_for_expr(val);
+            const char *fmt = print_fmt_for_expr(ctx, val);
             char *expr = gen_expr(val);
             int ok;
             if (!expr) return 0;
@@ -475,7 +477,7 @@ static int gen_statement(Buffer *b, ASTNode *stmt, int indent) {
             free(cond);
 
             if (stmt->data.if_stmt.then_branch) {
-                if (!gen_statement(b, stmt->data.if_stmt.then_branch, indent + 1)) return 0;
+                if (!gen_statement(ctx, b, stmt->data.if_stmt.then_branch, indent + 1)) return 0;
             }
 
             build_indent(indent, close_pad, sizeof(close_pad));
@@ -483,7 +485,7 @@ static int gen_statement(Buffer *b, ASTNode *stmt, int indent) {
 
             if (stmt->data.if_stmt.else_branch) {
                 if (!buf_appendf(b, " else {\n")) return 0;
-                if (!gen_statement(b, stmt->data.if_stmt.else_branch, indent + 1)) return 0;
+                if (!gen_statement(ctx, b, stmt->data.if_stmt.else_branch, indent + 1)) return 0;
                 build_indent(indent, close_pad, sizeof(close_pad));
                 if (!buf_appendf(b, "%s}\n", close_pad)) return 0;
             } else {
@@ -504,7 +506,7 @@ static int gen_statement(Buffer *b, ASTNode *stmt, int indent) {
             free(cond);
 
             if (stmt->data.while_stmt.body) {
-                if (!gen_statement(b, stmt->data.while_stmt.body, indent + 1)) return 0;
+                if (!gen_statement(ctx, b, stmt->data.while_stmt.body, indent + 1)) return 0;
             }
 
             build_indent(indent, close_pad, sizeof(close_pad));
@@ -513,9 +515,9 @@ static int gen_statement(Buffer *b, ASTNode *stmt, int indent) {
         }
 
         case AST_FOR: {
-            char *init = gen_for_clause(stmt->data.for_stmt.init);
+            char *init = gen_for_clause(ctx, stmt->data.for_stmt.init);
             char *cond = stmt->data.for_stmt.condition ? gen_expr(stmt->data.for_stmt.condition) : strdup("1");
-            char *update = gen_for_clause(stmt->data.for_stmt.update);
+            char *update = gen_for_clause(ctx, stmt->data.for_stmt.update);
             char close_pad[256];
             int ok = 1;
 
@@ -528,7 +530,7 @@ static int gen_statement(Buffer *b, ASTNode *stmt, int indent) {
 
             if (!buf_appendf(b, "%sfor (%s; %s; %s) {\n", pad, init ? init : "", cond, update ? update : "")) ok = 0;
             if (ok && stmt->data.for_stmt.body) {
-                if (!gen_statement(b, stmt->data.for_stmt.body, indent + 1)) ok = 0;
+                if (!gen_statement(ctx, b, stmt->data.for_stmt.body, indent + 1)) ok = 0;
             }
             build_indent(indent, close_pad, sizeof(close_pad));
             if (ok && !buf_appendf(b, "%s}\n", close_pad)) ok = 0;
@@ -563,7 +565,7 @@ static int gen_statement(Buffer *b, ASTNode *stmt, int indent) {
     }
 }
 
-static int emit_function_signature(Buffer *b, ASTNode *fn, int with_names) {
+static int emit_function_signature(CodegenContext *ctx, Buffer *b, ASTNode *fn, int with_names) {
     size_t i;
     if (!fn || fn->type != AST_FUNCTION) return 0;
 
@@ -574,7 +576,7 @@ static int emit_function_signature(Buffer *b, ASTNode *fn, int with_names) {
         if (i > 0 && !buf_appendf(b, ", ")) return 0;
         if (with_names) {
             if (!buf_appendf(b, "int %s", name ? name : "arg")) return 0;
-            if (!remember_var_type(name ? name : "arg", "int")) return 0;
+            if (!remember_var_type(ctx, name ? name : "arg", "int")) return 0;
         } else {
             if (!buf_appendf(b, "int")) return 0;
         }
@@ -584,38 +586,38 @@ static int emit_function_signature(Buffer *b, ASTNode *fn, int with_names) {
     return 1;
 }
 
-static int gen_function(Buffer *b, ASTNode *fn) {
+static int gen_function(CodegenContext *ctx, Buffer *b, ASTNode *fn) {
     int ok;
 
-    clear_var_types();
+    clear_var_types(ctx);
 
-    if (!emit_function_signature(b, fn, 1)) {
-        clear_var_types();
+    if (!emit_function_signature(ctx, b, fn, 1)) {
+        clear_var_types(ctx);
         return 0;
     }
     if (!buf_appendf(b, " {\n")) {
-        clear_var_types();
+        clear_var_types(ctx);
         return 0;
     }
-    ok = gen_block(b, fn->data.function.body, 1);
+    ok = gen_block(ctx, b, fn->data.function.body, 1);
     if (!ok) {
-        clear_var_types();
+        clear_var_types(ctx);
         return 0;
     }
     if (!buf_appendf(b, "    return 0;\n")) {
-        clear_var_types();
+        clear_var_types(ctx);
         return 0;
     }
     if (!buf_appendf(b, "}\n\n")) {
-        clear_var_types();
+        clear_var_types(ctx);
         return 0;
     }
 
-    clear_var_types();
+    clear_var_types(ctx);
     return 1;
 }
 
-static int gen_program(Buffer *b, ASTNode *program) {
+static int gen_program(CodegenContext *ctx, Buffer *b, ASTNode *program) {
     ASTNodeList *cur;
 
     if (!buf_appendf(b, "#include <stdio.h>\n\n")) return 0;
@@ -624,7 +626,7 @@ static int gen_program(Buffer *b, ASTNode *program) {
     while (cur) {
         ASTNode *decl = cur->node;
         if (decl && decl->type == AST_FUNCTION) {
-            if (!emit_function_signature(b, decl, 0)) return 0;
+            if (!emit_function_signature(ctx, b, decl, 0)) return 0;
             if (!buf_appendf(b, ";\n")) return 0;
         } else if (decl && decl->type != AST_IMPORT) {
             fprintf(stderr, "Codegen error: top-level non-function statement is not supported\n");
@@ -639,7 +641,7 @@ static int gen_program(Buffer *b, ASTNode *program) {
     while (cur) {
         ASTNode *decl = cur->node;
         if (decl && decl->type == AST_FUNCTION) {
-            if (!gen_function(b, decl)) return 0;
+            if (!gen_function(ctx, b, decl)) return 0;
         }
         cur = cur->next;
     }
@@ -653,27 +655,30 @@ void generate_code(ASTNode *root) { (void)root; }
 
 char *codegen_generate(ASTNode *ast) {
     Buffer b;
+    CodegenContext ctx;
     char *out;
     if (!ast) return NULL;
     if (!buf_init(&b, 512)) return NULL;
+    memset(&ctx, 0, sizeof(ctx));
 
     if (ast->type == AST_PROGRAM) {
-        if (!gen_program(&b, ast)) {
+        if (!gen_program(&ctx, &b, ast)) {
             free(b.data);
-            clear_var_types();
+            clear_var_types(&ctx);
             return NULL;
         }
     } else {
-        clear_var_types();
-        if (!gen_statement(&b, ast, 0)) {
+        clear_var_types(&ctx);
+        if (!gen_statement(&ctx, &b, ast, 0)) {
             free(b.data);
-            clear_var_types();
+            clear_var_types(&ctx);
             return NULL;
         }
     }
 
     out = b.data;
-    clear_var_types();
+    clear_var_types(&ctx);
     return out;
 }
+
 

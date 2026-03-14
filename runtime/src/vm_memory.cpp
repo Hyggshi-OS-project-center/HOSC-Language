@@ -1,8 +1,9 @@
-/* hvm_memory.c - Internal value helpers and reusable buffers for HOSC VM */
+/* vm_memory.cpp - Internal value helpers and reusable buffers for HOSC VM */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <string>
 
 #include "hvm_internal.h"
 
@@ -40,34 +41,34 @@ char* hvm_ensure_buffer(char **buffer, size_t *cap, size_t needed) {
 
 const char* hvm_value_to_cstring(HVM_VM *vm, HVM_Value v, char **buffer, size_t *cap) {
     char temp[128];
-    const char *src = "";
+    std::string formatted;
     size_t len;
 
     if (!vm || !buffer || !cap) return NULL;
 
     switch (v.type) {
         case HVM_TYPE_STRING:
-            src = v.data.string_value ? v.data.string_value : "";
+            formatted = v.data.string_value ? v.data.string_value : "";
             break;
         case HVM_TYPE_FLOAT:
             snprintf(temp, sizeof(temp), "%g", v.data.float_value);
-            src = temp;
+            formatted = temp;
             break;
         case HVM_TYPE_BOOL:
-            src = v.data.bool_value ? "true" : "false";
+            formatted = v.data.bool_value ? "true" : "false";
             break;
         case HVM_TYPE_INT:
             snprintf(temp, sizeof(temp), "%lld", (long long)v.data.int_value);
-            src = temp;
+            formatted = temp;
             break;
         default:
-            src = "null";
+            formatted = "null";
             break;
     }
 
-    len = strlen(src) + 1;
+    len = formatted.size() + 1;
     if (!hvm_ensure_buffer(buffer, cap, len)) return NULL;
-    memcpy(*buffer, src, len);
+    memcpy(*buffer, formatted.c_str(), len);
     return *buffer;
 }
 

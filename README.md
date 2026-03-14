@@ -18,7 +18,7 @@ cd tools
 
 Outputs:
 
-- `tools/bin/hosc-compiler.exe`
+- `tools/bin/hosc_compiler.exe`
 - `tools/bin/hvm.exe`
 - `tools/bin/hosc.exe`
 
@@ -57,7 +57,7 @@ Optional flags:
 ## Manual Pipeline
 
 ```powershell
-.\tools\bin\hosc-compiler.exe framework\examples\smoke.hosc -b smoke.hbc
+.\tools\bin\hosc_compiler.exe framework\examples\smoke.hosc -b smoke.hbc
 .\tools\bin\hvm.exe smoke.hbc
 ```
 
@@ -71,14 +71,14 @@ Run full P0 smoke gate (build + check/build/run + lexer fail-fast + fmt validati
 
 Framework maturity checklist:
 
-- `docs/FRAMEWORK_MATURITY.md`
+- `docs/framework_maturity.md`
 
 ## VSCode Mini (Python GUI)
 
 Requirements:
 
 - Python 3 + PyQt5 (`pip install PyQt5`)
-- `tools/bin/hosc-compiler.exe` and `tools/bin/hvm.exe` already built
+- `tools/bin/hosc_compiler.exe` and `tools/bin/hvm.exe` already built
 
 Run:
 
@@ -115,7 +115,3 @@ Menu event IDs exposed to script:
 - `1002` = Open
 - `1003` = Save
 - `1004` = Exit
-
-
-=======
-# HOSC-Language

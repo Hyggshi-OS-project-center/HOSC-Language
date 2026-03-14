@@ -7,160 +7,40 @@
 #include "hvm.h"
 #include "runtime_services.h"
 #include "hvm_internal.h"
+#include "file_utils.h"
+#include "vm_bytecode.h"
+#include "vm_gc.h"
 
 
 #define HVM_MAX_GLOBALS 512
 #define HVM_MAX_INSTRUCTIONS 65536
 #define HVM_GC_INITIAL_THRESHOLD (64u * 1024u)
-static HVM_GCObject* hvm_gc_find_object(HVM_VM* vm, const char* ptr) {
-    HVM_GCObject *it;
-    if (!vm || !ptr) return NULL;
-    it = vm->gc_objects;
-    while (it) {
-        if (it->ptr == ptr) return it;
-        it = it->next;
-    }
-    return NULL;
-}
-
-static int hvm_gc_track_string(HVM_VM* vm, char* ptr, size_t size) {
-    HVM_GCObject *obj;
-    if (!vm || !ptr) return 0;
-
-    obj = (HVM_GCObject *)malloc(sizeof(HVM_GCObject));
-    if (!obj) return 0;
-
-    obj->ptr = ptr;
-    obj->size = size;
-    obj->marked = 0;
-    obj->next = vm->gc_objects;
-    vm->gc_objects = obj;
-    vm->gc_object_count++;
-    vm->gc_bytes += size;
-
-    if (vm->gc_enabled && vm->gc_bytes >= vm->gc_next_collection) {
-        vm->gc_pending = 1;
-    }
-
-    return 1;
-}
-
-static char* hvm_gc_strdup(HVM_VM* vm, const char* value) {
-    size_t len;
-    char *ptr;
-
-    if (!vm) return NULL;
-    if (!value) value = "";
-
-    len = strlen(value) + 1;
-    ptr = strdup(value);
-    if (!ptr) return NULL;
-
-    if (!hvm_gc_track_string(vm, ptr, len)) {
-        free(ptr);
-        return NULL;
-    }
-
-    return ptr;
-}
-
-static void hvm_gc_mark_pointer(HVM_VM* vm, const char* ptr) {
-    HVM_GCObject *obj;
-    if (!vm || !ptr) return;
-    obj = hvm_gc_find_object(vm, ptr);
-    if (obj) obj->marked = 1;
-}
-
-static void hvm_gc_mark_roots(HVM_VM* vm) {
-    size_t i;
-    if (!vm) return;
-
-    for (i = 0; i < vm->stack_top; i++) {
-        if (vm->stack[i].type == HVM_TYPE_STRING && vm->stack[i].data.string_value) {
-            hvm_gc_mark_pointer(vm, vm->stack[i].data.string_value);
-        }
-    }
-
-    for (i = 0; i < vm->memory_used; i++) {
-        if (vm->memory[i].type == HVM_TYPE_STRING && vm->memory[i].data.string_value) {
-            hvm_gc_mark_pointer(vm, vm->memory[i].data.string_value);
-        }
-    }
-}
-
-static void hvm_gc_sweep(HVM_VM* vm) {
-    HVM_GCObject *cur;
-    HVM_GCObject *prev;
-
-    if (!vm) return;
-
-    prev = NULL;
-    cur = vm->gc_objects;
-    while (cur) {
-        if (!cur->marked) {
-            HVM_GCObject *dead = cur;
-            if (prev) prev->next = cur->next;
-            else vm->gc_objects = cur->next;
-
-            cur = cur->next;
-            vm->gc_object_count--;
-            if (vm->gc_bytes >= dead->size) vm->gc_bytes -= dead->size;
-            else vm->gc_bytes = 0;
-
-            free(dead->ptr);
-            free(dead);
-        } else {
-            prev = cur;
-            cur = cur->next;
-        }
-    }
-}
-
 static void hvm_gc_collect_internal(HVM_VM* vm) {
-    HVM_GCObject *it;
-    size_t next;
-
-    if (!vm || !vm->gc_enabled) return;
-
-    it = vm->gc_objects;
-    while (it) {
-        it->marked = 0;
-        it = it->next;
-    }
-
-    hvm_gc_mark_roots(vm);
-    hvm_gc_sweep(vm);
-
-    vm->gc_pending = 0;
-
-    next = vm->gc_bytes * 2;
-    if (next < HVM_GC_INITIAL_THRESHOLD) next = HVM_GC_INITIAL_THRESHOLD;
-    vm->gc_next_collection = next;
+    if (!vm || !vm->gc_heap) return;
+    hvm_gc_collect_heap((HVM_GcHeap*)vm->gc_heap, vm);
 }
 
 static void hvm_gc_destroy_all(HVM_VM* vm) {
-    HVM_GCObject *it;
-    if (!vm) return;
-
-    it = vm->gc_objects;
-    while (it) {
-        HVM_GCObject *next = it->next;
-        free(it->ptr);
-        free(it);
-        it = next;
-    }
-
-    vm->gc_objects = NULL;
+    if (!vm || !vm->gc_heap) return;
+    hvm_gc_destroy((HVM_GcHeap*)vm->gc_heap);
+    vm->gc_heap = NULL;
     vm->gc_object_count = 0;
     vm->gc_bytes = 0;
     vm->gc_pending = 0;
 }
 
-static int opcode_uses_string_operand(HVM_Opcode opcode) {
-    return opcode == HVM_PUSH_STRING ||
-           opcode == HVM_STORE_GLOBAL ||
-           opcode == HVM_LOAD_GLOBAL ||
-           opcode == HVM_CREATE_WINDOW;
+static void sync_bytecode_view(HVM_VM* vm) {
+    if (!vm || !vm->bytecode) {
+        if (vm) {
+            vm->instructions = NULL;
+            vm->instruction_count = 0;
+            vm->instruction_capacity = 0;
+        }
+        return;
+    }
+    vm->instructions = hvm_bytecode_data(vm->bytecode);
+    vm->instruction_count = hvm_bytecode_count(vm->bytecode);
+    vm->instruction_capacity = hvm_bytecode_capacity(vm->bytecode);
 }
 
 
@@ -171,18 +51,9 @@ void hvm_set_error_msg(HVM_VM* vm, const char* msg) {
 }
 
 static void hvm_clear_instructions(HVM_VM* vm) {
-    size_t i;
-    if (!vm || !vm->instructions) return;
-    for (i = 0; i < vm->instruction_count; i++) {
-        if (opcode_uses_string_operand(vm->instructions[i].opcode) && vm->instructions[i].operand.string_operand) {
-            free(vm->instructions[i].operand.string_operand);
-            vm->instructions[i].operand.string_operand = NULL;
-        }
-    }
-    free(vm->instructions);
-    vm->instructions = NULL;
-    vm->instruction_count = 0;
-    vm->instruction_capacity = 0;
+    if (!vm || !vm->bytecode) return;
+    hvm_bytecode_clear(vm->bytecode);
+    sync_bytecode_view(vm);
     vm->pc = 0;
 }
 
@@ -208,41 +79,10 @@ static double hvm_to_double(HVM_Value v) {
 
 
 static char *hvm_read_text_file(const char *path) {
-    FILE *fp;
-    long size;
-    size_t read_size;
     char *buffer;
-
     if (!path || path[0] == '\0') return strdup("");
-
-    fp = fopen(path, "rb");
-    if (!fp) return strdup("");
-
-    if (fseek(fp, 0, SEEK_END) != 0) {
-        fclose(fp);
-        return strdup("");
-    }
-
-    size = ftell(fp);
-    if (size < 0) {
-        fclose(fp);
-        return strdup("");
-    }
-
-    if (fseek(fp, 0, SEEK_SET) != 0) {
-        fclose(fp);
-        return strdup("");
-    }
-
-    buffer = (char *)malloc((size_t)size + 1);
-    if (!buffer) {
-        fclose(fp);
-        return strdup("");
-    }
-
-    read_size = fread(buffer, 1, (size_t)size, fp);
-    buffer[read_size] = '\0';
-    fclose(fp);
+    buffer = hosc_read_text_file(path, NULL);
+    if (!buffer) return strdup("");
     return buffer;
 }
 
@@ -375,9 +215,31 @@ HVM_VM* hvm_create(void) {
     vm->gc_enabled = 1;
     vm->gc_pending = 0;
     vm->gc_next_collection = HVM_GC_INITIAL_THRESHOLD;
+    vm->gc_heap = hvm_gc_create();
+    if (!vm->gc_heap) {
+        if (vm->bytecode) {
+            hvm_bytecode_destroy(vm->bytecode);
+            vm->bytecode = NULL;
+        }
+        free(vm);
+        return NULL;
+    }
+
+    vm->bytecode = hvm_bytecode_create();
+    if (!vm->bytecode) {
+        hvm_gc_destroy((HVM_GcHeap*)vm->gc_heap);
+        vm->gc_heap = NULL;
+        free(vm);
+        return NULL;
+    }
+    sync_bytecode_view(vm);
 
     vm->services = hvm_runtime_services_create_default();
     if (!vm->services) {
+        hvm_gc_destroy((HVM_GcHeap*)vm->gc_heap);
+        vm->gc_heap = NULL;
+        hvm_bytecode_destroy(vm->bytecode);
+        vm->bytecode = NULL;
         free(vm);
         return NULL;
     }
@@ -412,96 +274,51 @@ void hvm_destroy(HVM_VM* vm) {
         vm->services = NULL;
     }
 
+    if (vm->bytecode) {
+        hvm_bytecode_destroy(vm->bytecode);
+        vm->bytecode = NULL;
+    }
+
     free(vm);
 }
 
 int hvm_load_bytecode(HVM_VM* vm, const HVM_Instruction* instructions, size_t count) {
-    size_t i;
-    if (!vm || (!instructions && count > 0)) return 0;
+    if (!vm || !vm->bytecode || (!instructions && count > 0)) return 0;
     if (count > HVM_MAX_INSTRUCTIONS) return 0;
 
     hvm_clear_instructions(vm);
 
-    if (count == 0) {
-        vm->pc = 0;
-        return 1;
-    }
-
-    vm->instructions = (HVM_Instruction*)calloc(count, sizeof(HVM_Instruction));
-    if (!vm->instructions) return 0;
-
-    for (i = 0; i < count; i++) {
-        vm->instructions[i].opcode = instructions[i].opcode;
-        if (opcode_uses_string_operand(instructions[i].opcode)) {
-            if (instructions[i].operand.string_operand) {
-                vm->instructions[i].operand.string_operand = strdup(instructions[i].operand.string_operand);
-                if (!vm->instructions[i].operand.string_operand) {
-                    hvm_clear_instructions(vm);
-                    return 0;
-                }
-            } else {
-                vm->instructions[i].operand.string_operand = NULL;
-            }
-        } else {
-            vm->instructions[i].operand = instructions[i].operand;
-        }
-    }
-
-    vm->instruction_count = count;
-    vm->instruction_capacity = count;
+    if (!hvm_bytecode_load(vm->bytecode, instructions, count)) return 0;
+    sync_bytecode_view(vm);
     vm->pc = 0;
     return 1;
 }
 
-static int ensure_instruction_capacity(HVM_VM* vm) {
-    size_t new_cap;
-    HVM_Instruction* ni;
-
-    if (vm->instruction_count < vm->instruction_capacity) return 1;
-    if (vm->instruction_capacity >= HVM_MAX_INSTRUCTIONS) return 0;
-
-    new_cap = vm->instruction_capacity ? vm->instruction_capacity * 2 : 16;
-    if (new_cap > HVM_MAX_INSTRUCTIONS) new_cap = HVM_MAX_INSTRUCTIONS;
-
-    ni = (HVM_Instruction*)realloc(vm->instructions, sizeof(HVM_Instruction) * new_cap);
-    if (!ni) return 0;
-
-    memset(ni + vm->instruction_capacity, 0, sizeof(HVM_Instruction) * (new_cap - vm->instruction_capacity));
-    vm->instructions = ni;
-    vm->instruction_capacity = new_cap;
-    return 1;
-}
-
 int hvm_add_instruction(HVM_VM* vm, HVM_Opcode opcode, int64_t operand) {
-    if (!vm || !ensure_instruction_capacity(vm)) return 0;
-    vm->instructions[vm->instruction_count].opcode = opcode;
-    vm->instructions[vm->instruction_count].operand.int_operand = operand;
-    vm->instruction_count++;
+    if (!vm || !vm->bytecode) return 0;
+    if (!hvm_bytecode_add_int(vm->bytecode, opcode, operand)) return 0;
+    sync_bytecode_view(vm);
     return 1;
 }
 
 int hvm_add_instruction_float(HVM_VM* vm, HVM_Opcode opcode, double operand) {
-    if (!vm || !ensure_instruction_capacity(vm)) return 0;
-    vm->instructions[vm->instruction_count].opcode = opcode;
-    vm->instructions[vm->instruction_count].operand.float_operand = operand;
-    vm->instruction_count++;
+    if (!vm || !vm->bytecode) return 0;
+    if (!hvm_bytecode_add_float(vm->bytecode, opcode, operand)) return 0;
+    sync_bytecode_view(vm);
     return 1;
 }
 
 int hvm_add_instruction_string(HVM_VM* vm, HVM_Opcode opcode, const char* operand) {
-    if (!vm || !operand || !ensure_instruction_capacity(vm)) return 0;
-    vm->instructions[vm->instruction_count].opcode = opcode;
-    vm->instructions[vm->instruction_count].operand.string_operand = strdup(operand);
-    if (!vm->instructions[vm->instruction_count].operand.string_operand) return 0;
-    vm->instruction_count++;
+    if (!vm || !operand || !vm->bytecode) return 0;
+    if (!hvm_bytecode_add_string(vm->bytecode, opcode, operand)) return 0;
+    sync_bytecode_view(vm);
     return 1;
 }
 
 int hvm_add_instruction_address(HVM_VM* vm, HVM_Opcode opcode, size_t address) {
-    if (!vm || !ensure_instruction_capacity(vm)) return 0;
-    vm->instructions[vm->instruction_count].opcode = opcode;
-    vm->instructions[vm->instruction_count].operand.address_operand = address;
-    vm->instruction_count++;
+    if (!vm || !vm->bytecode) return 0;
+    if (!hvm_bytecode_add_address(vm->bytecode, opcode, address)) return 0;
+    sync_bytecode_view(vm);
     return 1;
 }
 
@@ -524,7 +341,7 @@ int hvm_push_float(HVM_VM* vm, double value) {
 int hvm_push_string(HVM_VM* vm, const char* value) {
     if (!vm || vm->stack_top >= HVM_STACK_SIZE || !value) return 0;
     vm->stack[vm->stack_top].type = HVM_TYPE_STRING;
-    vm->stack[vm->stack_top].data.string_value = hvm_gc_strdup(vm, value);
+    vm->stack[vm->stack_top].data.string_value = hvm_gc_strdup((HVM_GcHeap*)vm->gc_heap, vm, value);
     if (!vm->stack[vm->stack_top].data.string_value) return 0;
     vm->stack_top++;
 
@@ -1352,10 +1169,86 @@ static int op_nop(HVM_VM *vm, const HVM_Instruction *instr) {
     return 1;
 }
 
-static int op_gui(HVM_VM *vm, const HVM_Instruction *instr) {
-    int handled = hvm_runtime_services_handle_gui_opcode(vm->services, vm, instr->opcode, instr);
+static const char *gui_opcode_to_native(HVM_Opcode opcode) {
+    switch (opcode) {
+        case HVM_CREATE_WINDOW: return "gui.create_window";
+        case HVM_CLEAR: return "gui.clear";
+        case HVM_SET_BG_COLOR: return "gui.set_bg_color";
+        case HVM_SET_COLOR: return "gui.set_color";
+        case HVM_SET_FONT_SIZE: return "gui.set_font_size";
+        case HVM_DRAW_TEXT: return "gui.draw_text";
+        case HVM_DRAW_BUTTON: return "gui.draw_button";
+        case HVM_DRAW_BUTTON_STATE: return "gui.draw_button_state";
+        case HVM_DRAW_INPUT: return "gui.draw_input";
+        case HVM_DRAW_INPUT_STATE: return "gui.draw_input_state";
+        case HVM_DRAW_TEXTAREA: return "gui.draw_textarea";
+        case HVM_DRAW_IMAGE: return "gui.draw_image";
+        case HVM_GET_MOUSE_X: return "gui.get_mouse_x";
+        case HVM_GET_MOUSE_Y: return "gui.get_mouse_y";
+        case HVM_IS_MOUSE_DOWN: return "gui.is_mouse_down";
+        case HVM_WAS_MOUSE_UP: return "gui.was_mouse_up";
+        case HVM_WAS_MOUSE_CLICK: return "gui.was_mouse_click";
+        case HVM_IS_MOUSE_HOVER: return "gui.is_mouse_hover";
+        case HVM_IS_KEY_DOWN: return "gui.is_key_down";
+        case HVM_WAS_KEY_PRESS: return "gui.was_key_press";
+        case HVM_DELTA_TIME: return "gui.delta_time";
+        case HVM_LAYOUT_RESET: return "gui.layout_reset";
+        case HVM_LAYOUT_NEXT: return "gui.layout_next";
+        case HVM_LAYOUT_ROW: return "gui.layout_row";
+        case HVM_LAYOUT_COLUMN: return "gui.layout_column";
+        case HVM_LAYOUT_GRID: return "gui.layout_grid";
+        case HVM_LOOP: return "gui.loop";
+        case HVM_MENU_SETUP_NOTEPAD: return "gui.menu_setup_notepad";
+        case HVM_MENU_EVENT: return "gui.menu_event";
+        case HVM_SCROLL_SET_RANGE: return "gui.scroll_set_range";
+        case HVM_SCROLL_Y: return "gui.scroll_y";
+        case HVM_FILE_OPEN_DIALOG: return "gui.file_open_dialog";
+        case HVM_FILE_SAVE_DIALOG: return "gui.file_save_dialog";
+        case HVM_INPUT_SET: return "gui.input_set";
+        case HVM_TEXTAREA_SET: return "gui.textarea_set";
+        default: return NULL;
+    }
+}
+
+static int op_call_native(HVM_VM *vm, const HVM_Instruction *instr) {
+    const char *name = instr ? instr->operand.string_operand : NULL;
+    int handled = hvm_runtime_services_call_native(vm->services, vm, name, instr);
     if (!handled) {
-        hvm_set_error_msg(vm, "Unknown opcode");
+        hvm_set_error_msg(vm, "Unknown native call");
+        vm->running = 0;
+        return 0;
+    }
+    return 1;
+}
+
+static int op_sleep(HVM_VM *vm, const HVM_Instruction *instr) {
+    HVM_Value v;
+    int ms;
+    (void)instr;
+    if (vm->stack_top < 1) {
+        hvm_set_error_msg(vm, "Stack underflow in SLEEP");
+        vm->running = 0;
+        return 1;
+    }
+    v = hvm_pop(vm);
+    ms = (v.type == HVM_TYPE_FLOAT) ? (int)v.data.float_value : (int)v.data.int_value;
+    if (ms < 0) ms = 0;
+    hvm_runtime_services_sleep_ms(vm->services, ms);
+    hvm_free_value(&v);
+    return 1;
+}
+
+static int op_gui(HVM_VM *vm, const HVM_Instruction *instr) {
+    const char *name = gui_opcode_to_native(instr ? instr->opcode : HVM_OPCODE_COUNT);
+    int handled;
+    if (!name) {
+        hvm_set_error_msg(vm, "Unknown legacy GUI opcode");
+        vm->running = 0;
+        return 0;
+    }
+    handled = hvm_runtime_services_call_native(vm->services, vm, name, instr);
+    if (!handled) {
+        hvm_set_error_msg(vm, "GUI service unavailable");
         vm->running = 0;
         return 0;
     }
@@ -1397,6 +1290,7 @@ static const HVM_OpcodeHandler s_opcode_handlers[HVM_OPCODE_COUNT] = {
     [HVM_FILE_READ_LINE] = op_file_read_line,
     [HVM_FILE_WRITE] = op_file_write,
     [HVM_EXEC_COMMAND] = op_exec_command,
+    [HVM_SLEEP] = op_sleep,
 
     [HVM_CREATE_WINDOW] = op_gui,
     [HVM_DRAW_TEXT] = op_gui,
@@ -1432,7 +1326,8 @@ static const HVM_OpcodeHandler s_opcode_handlers[HVM_OPCODE_COUNT] = {
     [HVM_FILE_OPEN_DIALOG] = op_gui,
     [HVM_FILE_SAVE_DIALOG] = op_gui,
     [HVM_INPUT_SET] = op_gui,
-    [HVM_TEXTAREA_SET] = op_gui
+    [HVM_TEXTAREA_SET] = op_gui,
+    [HVM_CALL_NATIVE] = op_call_native
 };
 
 int hvm_run(HVM_VM* vm) {

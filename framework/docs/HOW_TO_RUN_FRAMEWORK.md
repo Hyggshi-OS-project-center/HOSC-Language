@@ -2,14 +2,8 @@
 
 ## 1) Build framework executable
 
-```powershell
-gcc -Wall -Wextra -std=c99 -O2 -Iframework\include -o framework\bin\hosc_framework.exe framework\src\hosc_framework.c framework\src\hosc_runtime.c framework\src\hosc_modules.c -luser32 -lgdi32 -lkernel32
-```
-
-Or with make:
-
 ```bash
-make -f framework/Makefile.framework framework
+make -f framework/makefile framework
 ```
 
 ## 2) Run a GUI demo
@@ -59,5 +53,5 @@ func main() {
 ## 5) Troubleshooting
 
 - `gcc not found`: install MinGW GCC and add to PATH.
-- `make not found`: use direct gcc build command above.
+- `make not found`: install GNU Make (or run from a shell that provides it).
 - GUI not opening: framework falls back to console backend and prints `[GUI:console] ...` lines.

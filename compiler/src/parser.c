@@ -89,7 +89,7 @@ static void skip_statement(Parser *p) {
 }
 
 static ASTNode *make_noop(void) {
-    ASTNode *n = create_ast_node(AST_BLOCK);
+    ASTNode *n = create_ast_node(p->arena, AST_BLOCK);
     if (!n) return NULL;
     n->data.block.statements = NULL;
     return n;
@@ -144,21 +144,21 @@ static char *parse_identifier_path(Parser *p) {
 
 static ASTNode *parse_primary(Parser *p) {
     if (match(p, TOKEN_NUMBER)) {
-        ASTNode *n = create_ast_node(AST_NUMBER);
+        ASTNode *n = create_ast_node(p->arena, AST_NUMBER);
         if (!n) return NULL;
         n->data.number.value = p->tokens[p->current - 1].value.number;
         return n;
     }
 
     if (match(p, TOKEN_FLOAT)) {
-        ASTNode *n = create_ast_node(AST_FLOAT);
+        ASTNode *n = create_ast_node(p->arena, AST_FLOAT);
         if (!n) return NULL;
         n->data.fnumber.value = p->tokens[p->current - 1].value.fnumber;
         return n;
     }
 
     if (match(p, TOKEN_STRING)) {
-        ASTNode *n = create_ast_node(AST_STRING);
+        ASTNode *n = create_ast_node(p->arena, AST_STRING);
         if (!n) return NULL;
         n->data.string_lit.value = dup_str(p, p->tokens[p->current - 1].value.string_lit);
         return n;
@@ -166,7 +166,7 @@ static ASTNode *parse_primary(Parser *p) {
 
     if (match(p, TOKEN_BOOL_TRUE) || match(p, TOKEN_BOOL_FALSE)) {
         Token *t = &p->tokens[p->current - 1];
-        ASTNode *n = create_ast_node(AST_BOOL);
+        ASTNode *n = create_ast_node(p->arena, AST_BOOL);
         if (!n) return NULL;
         n->data.boolean.value = (t->type == TOKEN_BOOL_TRUE);
         return n;
@@ -183,20 +183,20 @@ static ASTNode *parse_primary(Parser *p) {
                 while (1) {
                     ASTNode *arg = parse_expression(p);
                     if (!arg) return NULL;
-                    args = ast_list_append(args, arg);
+                    args = ast_list_append(p->arena, args, arg);
                     if (!match(p, TOKEN_COMMA)) break;
                 }
             }
             if (!match(p, TOKEN_RPAREN)) return NULL;
 
-            node = create_ast_node(AST_CALL_EXPR);
+            node = create_ast_node(p->arena, AST_CALL_EXPR);
             if (!node) return NULL;
             node->data.call_expr.callee = path;
             node->data.call_expr.arguments = args;
             return node;
         }
 
-        node = create_ast_node(AST_IDENTIFIER);
+        node = create_ast_node(p->arena, AST_IDENTIFIER);
         if (!node) return NULL;
         node->data.identifier.name = path;
         return node;
@@ -222,7 +222,7 @@ static ASTNode *parse_unary(Parser *p) {
         ASTNode *unary;
         if (!right) return NULL;
 
-        unary = create_ast_node(AST_UNARY_OP);
+        unary = create_ast_node(p->arena, AST_UNARY_OP);
         if (!unary) {
             free_ast(right);
             return NULL;
@@ -249,7 +249,7 @@ static ASTNode *parse_factor(Parser *p) {
             free_ast(left);
             return NULL;
         }
-        bin = create_ast_node(AST_BINARY_OP);
+        bin = create_ast_node(p->arena, AST_BINARY_OP);
         if (!bin) {
             free_ast(left);
             free_ast(right);
@@ -278,7 +278,7 @@ static ASTNode *parse_term(Parser *p) {
             free_ast(left);
             return NULL;
         }
-        bin = create_ast_node(AST_BINARY_OP);
+        bin = create_ast_node(p->arena, AST_BINARY_OP);
         if (!bin) {
             free_ast(left);
             free_ast(right);
@@ -308,7 +308,7 @@ static ASTNode *parse_comparison(Parser *p) {
             free_ast(left);
             return NULL;
         }
-        bin = create_ast_node(AST_BINARY_OP);
+        bin = create_ast_node(p->arena, AST_BINARY_OP);
         if (!bin) {
             free_ast(left);
             free_ast(right);
@@ -337,7 +337,7 @@ static ASTNode *parse_equality(Parser *p) {
             free_ast(left);
             return NULL;
         }
-        bin = create_ast_node(AST_BINARY_OP);
+        bin = create_ast_node(p->arena, AST_BINARY_OP);
         if (!bin) {
             free_ast(left);
             free_ast(right);
@@ -366,7 +366,7 @@ static ASTNode *parse_logic_and(Parser *p) {
             free_ast(left);
             return NULL;
         }
-        bin = create_ast_node(AST_BINARY_OP);
+        bin = create_ast_node(p->arena, AST_BINARY_OP);
         if (!bin) {
             free_ast(left);
             free_ast(right);
@@ -395,7 +395,7 @@ static ASTNode *parse_logic_or(Parser *p) {
             free_ast(left);
             return NULL;
         }
-        bin = create_ast_node(AST_BINARY_OP);
+        bin = create_ast_node(p->arena, AST_BINARY_OP);
         if (!bin) {
             free_ast(left);
             free_ast(right);
@@ -433,7 +433,7 @@ static ASTNode *parse_var_decl_core(Parser *p, int is_var, int require_end) {
         return NULL;
     }
 
-    node = create_ast_node(AST_VARIABLE_DECLARATION);
+    node = create_ast_node(p->arena, AST_VARIABLE_DECLARATION);
     if (!node) {
         free_ast(value);
         return NULL;
@@ -465,7 +465,7 @@ static ASTNode *parse_assignment_core(Parser *p, int require_end) {
         return NULL;
     }
 
-    node = create_ast_node(AST_ASSIGNMENT);
+    node = create_ast_node(p->arena, AST_ASSIGNMENT);
     if (!node) {
         free_ast(value);
         return NULL;
@@ -497,7 +497,7 @@ static ASTNode *parse_print(Parser *p) {
         return NULL;
     }
 
-    node = create_ast_node(AST_PRINT_STATEMENT);
+    node = create_ast_node(p->arena, AST_PRINT_STATEMENT);
     if (!node) {
         free_ast(expr);
         return NULL;
@@ -507,7 +507,7 @@ static ASTNode *parse_print(Parser *p) {
 }
 
 static ASTNode *parse_break_or_continue(Parser *p, int is_continue) {
-    ASTNode *node = create_ast_node(is_continue ? AST_CONTINUE : AST_BREAK);
+    ASTNode *node = create_ast_node(p->arena, is_continue ? AST_CONTINUE : AST_BREAK);
     if (!node) return NULL;
     if (!consume_statement_end(p)) {
         free_ast(node);
@@ -516,7 +516,7 @@ static ASTNode *parse_break_or_continue(Parser *p, int is_continue) {
     return node;
 }
 static ASTNode *parse_return(Parser *p) {
-    ASTNode *node = create_ast_node(AST_RETURN);
+    ASTNode *node = create_ast_node(p->arena, AST_RETURN);
     if (!node) return NULL;
 
     if (!check(p, TOKEN_SEMICOLON) && !check(p, TOKEN_RBRACE) && !check(p, TOKEN_EOF)) {
@@ -544,7 +544,7 @@ static ASTNode *parse_expr_statement_core(Parser *p, int require_end) {
         return NULL;
     }
 
-    stmt = create_ast_node(AST_EXPR_STATEMENT);
+    stmt = create_ast_node(p->arena, AST_EXPR_STATEMENT);
     if (!stmt) {
         free_ast(expr);
         return NULL;
@@ -579,7 +579,7 @@ static ASTNode *parse_if(Parser *p) {
         }
     }
 
-    node = create_ast_node(AST_IF);
+    node = create_ast_node(p->arena, AST_IF);
     if (!node) {
         free_ast(cond);
         free_ast(thenb);
@@ -607,7 +607,7 @@ static ASTNode *parse_while(Parser *p) {
         return NULL;
     }
 
-    node = create_ast_node(AST_WHILE);
+    node = create_ast_node(p->arena, AST_WHILE);
     if (!node) {
         free_ast(cond);
         free_ast(body);
@@ -676,7 +676,7 @@ static ASTNode *parse_for(Parser *p) {
         return NULL;
     }
 
-    node = create_ast_node(AST_FOR);
+    node = create_ast_node(p->arena, AST_FOR);
     if (!node) {
         free_ast(init);
         free_ast(cond);
@@ -701,7 +701,7 @@ static ASTNode *parse_import(Parser *p) {
     path = advance_tok(p);
     if (!consume_statement_end(p)) return NULL;
 
-    n = create_ast_node(AST_IMPORT);
+    n = create_ast_node(p->arena, AST_IMPORT);
     if (!n) return NULL;
     n->data.import_stmt.path = dup_str(p, path->value.string_lit);
     return n;
@@ -718,7 +718,7 @@ static ASTNode *parse_window(Parser *p) {
     if (!match(p, TOKEN_RPAREN)) return NULL;
     if (!consume_statement_end(p)) return NULL;
 
-    n = create_ast_node(AST_WINDOW_STMT);
+    n = create_ast_node(p->arena, AST_WINDOW_STMT);
     if (!n) return NULL;
     n->data.window_stmt.title = dup_str(p, title->value.string_lit);
     return n;
@@ -768,7 +768,7 @@ static ASTNode *parse_text(Parser *p) {
         return NULL;
     }
 
-    n = create_ast_node(AST_TEXT_STMT);
+    n = create_ast_node(p->arena, AST_TEXT_STMT);
     if (!n) {
         free_ast(x);
         free_ast(y);
@@ -820,7 +820,7 @@ static ASTNode *parse_block(Parser *p) {
     ASTNode *block;
     ASTNodeList *stmts = NULL;
 
-    block = create_ast_node(AST_BLOCK);
+    block = create_ast_node(p->arena, AST_BLOCK);
     if (!block) return NULL;
     if (!match(p, TOKEN_LBRACE)) {
         free_ast(block);
@@ -833,7 +833,7 @@ static ASTNode *parse_block(Parser *p) {
             free_ast(block);
             return NULL;
         }
-        stmts = ast_list_append(stmts, stmt);
+        stmts = ast_list_append(p->arena, stmts, stmt);
     }
 
     if (!match(p, TOKEN_RBRACE)) {
@@ -899,7 +899,7 @@ static ASTNode *parse_function(Parser *p) {
         return NULL;
     }
 
-    fn = create_ast_node(AST_FUNCTION);
+    fn = create_ast_node(p->arena, AST_FUNCTION);
     if (!fn) {
         free_ast(body);
         free(tmp_params);
@@ -937,7 +937,7 @@ static ASTNode *parse_package(Parser *p) {
     if (!check(p, TOKEN_IDENTIFIER)) return NULL;
     id = advance_tok(p);
 
-    pkg = create_ast_node(AST_PACKAGE);
+    pkg = create_ast_node(p->arena, AST_PACKAGE);
     if (!pkg) return NULL;
     pkg->data.package.name = dup_str(p, id->value.identifier);
     (void)consume_statement_end(p);
@@ -967,7 +967,6 @@ Parser* parser_create(Token* tokens) {
         return NULL;
     }
 
-    ast_set_arena(parser->arena);
     return parser;
 }
 
@@ -981,7 +980,7 @@ void parser_free(Parser* parser) {
 }
 
 ASTNode* parser_parse_program(Parser* p) {
-    ASTNode *program = create_ast_node(AST_PROGRAM);
+    ASTNode *program = create_ast_node(p->arena, AST_PROGRAM);
     ASTNodeList *decls = NULL;
     if (!program) return NULL;
 
@@ -1003,7 +1002,7 @@ ASTNode* parser_parse_program(Parser* p) {
             return NULL;
         }
 
-        decls = ast_list_append(decls, decl);
+        decls = ast_list_append(p->arena, decls, decl);
     }
 
     program->data.program.declarations = decls;
@@ -1027,14 +1026,11 @@ ASTNode* parser_parse(const char* source) {
         return NULL;
     }
 
-    ast_set_arena(parser->arena);
     result = parser_parse_program(parser);
 
     if (result) {
-        /* Transfer arena ownership to AST global holder; caller must call ast_release_arena(). */
+        /* Transfer arena ownership to AST; caller must call ast_destroy(). */
         parser->arena = NULL;
-    } else {
-        ast_set_arena(NULL);
     }
 
     parser_free(parser);
@@ -1042,6 +1038,7 @@ ASTNode* parser_parse(const char* source) {
 
     return result;
 }
+
 
 
 

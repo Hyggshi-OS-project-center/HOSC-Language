@@ -18,7 +18,7 @@
 #define MAX_PATH 260
 #endif
 
-#define HOSC_CLI_VERSION "0.3.0"
+#define HOSC_CLI_VERSION "0.4.1"
 #define HOSC_BUNDLE_MAGIC "HOSCEXE1"
 #define HOSC_BUNDLE_MAGIC_LEN 8
 
@@ -549,10 +549,10 @@ int main(int argc, char **argv) {
     }
 
     get_exe_dir(exe_dir, sizeof(exe_dir));
-    path_join(exe_dir, "hosc-compiler.exe", compiler_path, sizeof(compiler_path));
+    path_join(exe_dir, "hosc_compiler.exe", compiler_path, sizeof(compiler_path));
     path_join(exe_dir, "hvm.exe", vm_path, sizeof(vm_path));
 
-    if (!file_exists(compiler_path)) snprintf(compiler_path, sizeof(compiler_path), "hosc-compiler.exe");
+    if (!file_exists(compiler_path)) snprintf(compiler_path, sizeof(compiler_path), "hosc_compiler.exe");
     if (!file_exists(vm_path)) snprintf(vm_path, sizeof(vm_path), "hvm.exe");
 
     if (strcmp(command, "build") == 0) {
