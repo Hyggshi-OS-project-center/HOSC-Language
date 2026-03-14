@@ -6,13 +6,25 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install compiler
-        run: sudo apt-get update && sudo apt-get install -y build-essential make
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-make
 
-      - name: Build HOSC
-        run: make -C tools
+      - name: Build and Unit Test
+        shell: msys2 {0}
+        run: |
+          make -C tools all test
+
+      - name: Integration Test (Quality Gate)
+        shell: pwsh
+        run: |
+          $env:PATH = "C:\msys64\mingw64\bin;$env:PATH"
+          powershell -File tools/quality_gate.ps1
