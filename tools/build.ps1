@@ -50,7 +50,7 @@ New-Item -ItemType Directory -Force -Path "$root\\tools\\bin" | Out-Null
 New-Item -ItemType Directory -Force -Path "$root\\build\\obj" | Out-Null
 
 function Get-ObjPath([string]$src) {
-  $rel = $src.Substring($root.Length).TrimStart('\\','/')
+  $rel = $src.Substring($root.Length).TrimStart('\', '/')
   $rel = $rel -replace '[\\/:.]','_'
   return Join-Path "$root\\build\\obj" ($rel + '.o')
 }
