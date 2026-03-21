@@ -1,0 +1,94 @@
+name: HOSC Language CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    name: Build & Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+
+    steps:
+      # ── Checkout ────────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Windows: install MinGW via Chocolatey ────────────────────────────────
+      - name: Install MinGW (Windows)
+        if: runner.os == 'Windows'
+        run: choco install mingw --no-progress -y
+        shell: pwsh
+
+      # ── Linux: install gcc / make ────────────────────────────────────────────
+      - name: Install build tools (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y gcc make
+
+      # ── Windows build: use existing PowerShell script ───────────────────────
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cd tools
+          .\build.ps1
+        shell: pwsh
+
+      # ── Linux build: fallback Makefile / direct gcc ──────────────────────────
+      - name: Build (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p tools/bin
+          # Compiler frontend
+          gcc compiler/main.c \
+              -Icompiler -Iruntime -Icore -Iframework \
+              -o tools/bin/hosc_compiler \
+              -lm
+          # VM runtime
+          gcc runtime/main.c \
+              -Iruntime -Icore \
+              -o tools/bin/hvm \
+              -lm
+          # Unified CLI (hosc)
+          gcc tools/hosc_main.c \
+              -Icompiler -Iruntime -Icore -Iframework \
+              -o tools/bin/hosc \
+              -lm
+        shell: bash
+
+      # ── Smoke test: version check ────────────────────────────────────────────
+      - name: Smoke test – version (Windows)
+        if: runner.os == 'Windows'
+        run: .\tools\bin\hosc.exe --version
+        shell: pwsh
+
+      - name: Smoke test – version (Linux)
+        if: runner.os == 'Linux'
+        run: ./tools/bin/hosc --version
+
+      # ── Smoke test: compile + run example ───────────────────────────────────
+      - name: Smoke test – run example (Windows)
+        if: runner.os == 'Windows'
+        run: .\tools\bin\hosc.exe run framework\examples\smoke.hosc
+        shell: pwsh
+
+      - name: Smoke test – run example (Linux)
+        if: runner.os == 'Linux'
+        run: ./tools/bin/hosc run framework/examples/smoke.hosc
+
+      # ── Upload binaries as artifact ──────────────────────────────────────────
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hosc-binaries-${{ matrix.os }}
+          path: |
+            tools/bin/hosc_compiler*
+            tools/bin/hvm*
+            tools/bin/hosc*
+          retention-days: 7
