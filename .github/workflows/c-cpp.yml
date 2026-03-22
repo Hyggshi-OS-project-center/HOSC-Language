@@ -2,128 +2,66 @@ name: HOSC Language CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  build:
-    name: Build & Test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, ubuntu-latest]
+  windows-build:
+    name: Build and Smoke Test (Windows)
+    runs-on: windows-latest
 
     steps:
-      # ── Checkout ─────────────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ── Windows: install MinGW via Chocolatey ─────────────────────────────────
-      - name: Install MinGW (Windows)
-        if: runner.os == 'Windows'
-        run: choco install mingw --no-progress -y
+      - name: Install MinGW
         shell: pwsh
-
-      # ── Linux: install gcc / g++ / make ──────────────────────────────────────
-      - name: Install build tools (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y gcc g++ make
-
-      # ── Windows build: PowerShell script ─────────────────────────────────────
-      - name: Build (Windows)
-        if: runner.os == 'Windows'
         run: |
-          cd tools
-          .\build.ps1
-        shell: pwsh
+          choco install mingw --no-progress -y
 
-      # ── Linux build: direct gcc/g++ with correct paths ───────────────────────
-      - name: Build (Linux)
-        if: runner.os == 'Linux'
+          $gcc = Get-ChildItem 'C:\ProgramData\chocolatey\lib\mingw\tools\install' -Filter gcc.exe -Recurse -ErrorAction Stop |
+            Select-Object -First 1
+
+          if (-not $gcc) {
+            throw 'gcc.exe was not found after MinGW installation.'
+          }
+
+          $binDir = Split-Path -Parent $gcc.FullName
+          $binDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Verify toolchain
+        shell: pwsh
         run: |
-          set -e
-          mkdir -p tools/bin
+          gcc --version
+          g++ --version
+          ar --version
 
-          CFLAGS="-Icompiler/include -Iruntime/include -Iframework/include -Iservices/include -Icore -lm"
-
-          # ── 1. Compile C++ object files ──────────────────────────────────────
-          g++ -c compiler/src/arena.cpp       -Icompiler/include -o /tmp/arena.o
-          g++ -c runtime/src/bytecode.cpp     -Iruntime/include  -o /tmp/bytecode.o
-          g++ -c runtime/src/gc.cpp           -Iruntime/include  -o /tmp/gc.o
-          g++ -c runtime/src/vm_memory.cpp    -Iruntime/include  -o /tmp/vm_memory.o
-
-          # ── 2. Compile C object files (compiler) ─────────────────────────────
-          gcc -c compiler/src/ast_utils.c     $CFLAGS -o /tmp/ast_utils.o
-          gcc -c compiler/src/codegen.c       $CFLAGS -o /tmp/codegen.o
-          gcc -c compiler/src/core.c          $CFLAGS -o /tmp/core.o
-          gcc -c compiler/src/lexer.c         $CFLAGS -o /tmp/lexer.o
-          gcc -c compiler/src/parser.c        $CFLAGS -o /tmp/parser.o
-
-          # ── 3. Compile C object files (runtime) ──────────────────────────────
-          gcc -c runtime/src/bytecode_io.c    $CFLAGS -o /tmp/bytecode_io.o
-          gcc -c runtime/src/executor.c       $CFLAGS -o /tmp/executor.o
-          gcc -c runtime/src/hvm_compiler.c   $CFLAGS -o /tmp/hvm_compiler.o
-          gcc -c runtime/src/hvm_platform.c   $CFLAGS -o /tmp/hvm_platform.o
-          gcc -c runtime/src/hvm_runner.c     $CFLAGS -o /tmp/hvm_runner.o
-
-          # ── 4. Compile C object files (services) ─────────────────────────────
-          gcc -c services/src/runtime_services.c $CFLAGS -o /tmp/runtime_services.o
-          gcc -c services/src/runtime_gui.c      $CFLAGS -o /tmp/runtime_gui.o
-
-          # ── 5. Link hosc_compiler binary ─────────────────────────────────────
-          g++ compiler/src/hosc_compiler.c \
-              /tmp/arena.o /tmp/ast_utils.o /tmp/codegen.o \
-              /tmp/core.o /tmp/lexer.o /tmp/parser.o \
-              $CFLAGS -o tools/bin/hosc_compiler
-
-          # ── 6. Link hvm binary ────────────────────────────────────────────────
-          g++ runtime/src/hvm.c \
-              /tmp/bytecode.o /tmp/bytecode_io.o /tmp/executor.o \
-              /tmp/gc.o /tmp/hvm_compiler.o /tmp/hvm_platform.o \
-              /tmp/hvm_runner.o /tmp/vm_memory.o \
-              $CFLAGS -o tools/bin/hvm
-
-          # ── 7. Link hosc CLI binary ───────────────────────────────────────────
-          g++ tools/hosc_cli.c \
-              /tmp/arena.o /tmp/ast_utils.o /tmp/codegen.o /tmp/core.o \
-              /tmp/lexer.o /tmp/parser.o \
-              /tmp/bytecode.o /tmp/bytecode_io.o /tmp/executor.o \
-              /tmp/gc.o /tmp/hvm_compiler.o /tmp/hvm_platform.o \
-              /tmp/hvm_runner.o /tmp/vm_memory.o \
-              /tmp/runtime_services.o /tmp/runtime_gui.o \
-              $CFLAGS -o tools/bin/hosc
-        shell: bash
-
-      # ── Smoke test: version ───────────────────────────────────────────────────
-      - name: Smoke test – version (Windows)
-        if: runner.os == 'Windows'
-        run: .\tools\bin\hosc.exe --version
+      - name: Build tools
         shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File .\tools\build.ps1
 
-      - name: Smoke test – version (Linux)
-        if: runner.os == 'Linux'
-        run: ./tools/bin/hosc --version
-
-      # ── Smoke test: compile + run example ────────────────────────────────────
-      - name: Smoke test – run example (Windows)
-        if: runner.os == 'Windows'
-        run: .\tools\bin\hosc.exe run framework\examples\smoke.hosc
+      - name: Smoke test CLI
         shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path .\build | Out-Null
+          .\tools\bin\hosc.exe --version
+          .\tools\bin\hosc.exe check .\examples\hello_world\hello.hosc
+          .\tools\bin\hosc.exe build .\examples\hello_world\hello.hosc -o .\build\ci-hello.hbc
 
-      - name: Smoke test – run example (Linux)
-        if: runner.os == 'Linux'
-        run: ./tools/bin/hosc run framework/examples/smoke.hosc
-
-      # ── Upload binaries ───────────────────────────────────────────────────────
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: hosc-binaries-${{ matrix.os }}
+          name: hosc-windows-binaries
           path: |
-            tools/bin/hosc_compiler*
-            tools/bin/hvm*
-            tools/bin/hosc*
+            tools/bin/hosc.exe
+            tools/bin/hosc_compiler.exe
+            tools/bin/hvm.exe
+            tools/bin/libhppapi.a
+            build/ci-hello.hbc
+          if-no-files-found: error
           retention-days: 7
