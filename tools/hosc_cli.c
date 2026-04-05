@@ -10,7 +10,7 @@
 
 #include "hosc_compiler.h"
 
-#define HOSC_VERSION "0.1.0"
+#define HOSC_VERSION "0.1.1"
 #define HOSC_FMT_TAB_WIDTH 4
 
 static int streq(const char *a, const char *b) {
