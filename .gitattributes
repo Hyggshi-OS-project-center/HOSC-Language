@@ -1,0 +1,7 @@
+# Inform Linguist that .hosc is a proprietary language.
+*.hosc linguist-language=HOSC
+*.hosc++ linguist-language=HOSC++
+
+# If you want to avoid being mistakenly detected as C
+*.hosc linguist-detectable=true
+
