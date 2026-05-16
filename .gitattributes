@@ -5,6 +5,5 @@ src/vm/** linguist-vendored=true
 *.c linguist-detectable=false
 *.h linguist-detectable=false
 
-
-*.hosc linguist-language=HOSC
+*.hosc linguist-language=C
 *.hosc linguist-detectable=true
