@@ -93,7 +93,7 @@ jobs:
           .\tools\bin\hosc.exe build .\examples\hello_world\hello.hosc -o .\build\ci-hello.hbc
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: hosc-windows-binaries
           path: |
