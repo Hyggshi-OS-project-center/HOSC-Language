@@ -1,0 +1,52 @@
+package main
+
+func main() {
+    window({
+        title: "HOSC Media Center",
+        width: 980,
+        height: 620,
+        resizable: false,
+        fullscreen: false,
+        icon: "framework/examples/asset/icon.ico",
+        minWidth: 980,
+        minHeight: 620,
+        center: true
+    })
+
+    theme({
+        surfaceR: 18,
+        surfaceG: 23,
+        surfaceB: 32,
+        surface2R: 30,
+        surface2G: 38,
+        surface2B: 52,
+        accentR: 88,
+        accentG: 199,
+        accentB: 250,
+        textR: 245,
+        textG: 247,
+        textB: 252,
+        mutedR: 142,
+        mutedG: 154,
+        mutedB: 178,
+        radius: 26
+    })
+
+    audio.play({
+        src: "framework/examples/asset/Dreams-pt-II-Instrumental.mp3"
+    })
+
+    media_player({
+        x: 0,
+        y: 0,
+        width: 980,
+        height: 620,
+        title: "Dreams-pt-II-Instrumental",
+        cover: "framework/examples/asset/momoi.png",
+        src: "framework/examples/asset/Dreams-pt-II-Instrumental.mp3"
+    })
+
+    loop(0, 100) {
+        pump_events()
+    }
+}

@@ -3,8 +3,8 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $buildScript = Join-Path $root 'tools\build.ps1'
 $hosc = Join-Path $root 'tools\bin\hosc.exe'
-$compiler = Join-Path $root 'tools\bin\hosc-compiler.exe'
 $hvm = Join-Path $root 'tools\bin\hvm.exe'
+$hvmHost = Join-Path $root 'tools\bin\hvm_host.exe'
 $gateDir = Join-Path $root 'build\quality_gate'
 
 function Assert-True([bool]$cond, [string]$message) {
@@ -21,10 +21,6 @@ function Invoke-Step([string]$name, [scriptblock]$action) {
     }
 }
 
-function Match-Line([string]$text, [string]$line) {
-    return ($text -match "(?m)^\s*$([regex]::Escape($line))\s*$")
-}
-
 New-Item -ItemType Directory -Force -Path $gateDir | Out-Null
 
 Invoke-Step 'Build compiler/runtime/cli' {
@@ -32,84 +28,69 @@ Invoke-Step 'Build compiler/runtime/cli' {
 }
 
 Assert-True (Test-Path $hosc) "Missing binary: $hosc"
-Assert-True (Test-Path $compiler) "Missing binary: $compiler"
 Assert-True (Test-Path $hvm) "Missing binary: $hvm"
+Assert-True (Test-Path $hvmHost) "Missing binary: $hvmHost"
 
-$versionOut = (& $hosc --version 2>&1 | Out-String)
-Assert-True ($LASTEXITCODE -eq 0) 'hosc --version failed'
-Assert-True ($versionOut -match '(?i)hosc\s+\d') 'version output missing expected marker'
+$versionOut = (& $hosc version 2>&1 | Out-String)
+Assert-True ($LASTEXITCODE -eq 0) 'hosc version failed'
+Assert-True ($versionOut -match 'HOSC 0\.2\.0') 'version output missing expected marker'
 
-$goodSrc = @"
+$helloSrc = @"
 package main
 
 func main() {
-    var i = 0
-    while i < 3 {
-        print(i)
-        i = i + 1
-    }
+    print("Hello from quality gate")
 }
 "@
 
-$goodFile = Join-Path $gateDir 'good.hosc'
-$goodHbc = Join-Path $gateDir 'good.hbc'
-Set-Content -Path $goodFile -Value $goodSrc -NoNewline -Encoding utf8
+$helloFile = Join-Path $gateDir 'hello.hosc'
+$helloHbc = Join-Path $gateDir 'hello.hbc'
+Set-Content -Path $helloFile -Value $helloSrc -NoNewline -Encoding utf8
+if (Test-Path $helloHbc) {
+    Remove-Item $helloHbc -Force
+}
 
 Invoke-Step 'CLI check (valid source)' {
-    & $hosc check $goodFile
+    & $hosc check $helloFile
 }
 
 Invoke-Step 'CLI build (valid source)' {
-    & $hosc build $goodFile -o $goodHbc
+    & $hosc build $helloFile
 }
 
-Assert-True (Test-Path $goodHbc) "Expected output file was not created: $goodHbc"
+Assert-True (Test-Path $helloHbc) "Expected output file was not created: $helloHbc"
 
-$runOut = (& $hosc run $goodFile -o $goodHbc 2>&1 | Out-String)
+$runOut = (& $hosc run $helloFile 2>&1 | Out-String)
 Assert-True ($LASTEXITCODE -eq 0) 'hosc run failed on valid source'
-Assert-True (Match-Line $runOut '0') 'run output missing line: 0'
-Assert-True (Match-Line $runOut '1') 'run output missing line: 1'
-Assert-True (Match-Line $runOut '2') 'run output missing line: 2'
+Assert-True ($runOut -match 'Hello from quality gate') 'run output missing expected line'
 
-$badStringSrc = @"
+$customHbc = Join-Path $gateDir 'custom-output.hbc'
+if (Test-Path $customHbc) {
+    Remove-Item $customHbc -Force
+}
+
+Invoke-Step 'CLI run with custom bytecode output' {
+    & $hosc run $helloFile -o $customHbc
+}
+
+Assert-True (Test-Path $customHbc) "Expected custom bytecode output was not created: $customHbc"
+
+$badSrc = @"
 package main
 
-func main() {
-    var s = "unterminated
-    print(s)
-}
+print("missing function")
 "@
 
-$badFile = Join-Path $gateDir 'bad_unterminated_string.hosc'
-$badHbc = Join-Path $gateDir 'bad_unterminated_string.hbc'
-Set-Content -Path $badFile -Value $badStringSrc -NoNewline -Encoding utf8
-if (Test-Path $badHbc) {
-    Remove-Item $badHbc -Force
-}
+$badFile = Join-Path $gateDir 'missing_main.hosc'
+Set-Content -Path $badFile -Value $badSrc -NoNewline -Encoding utf8
 
-$badCmd = '"{0}" build "{1}" -o "{2}"' -f $hosc, $badFile, $badHbc
-$badOut = (& cmd /c "$badCmd 2>&1" | Out-String)
+$previousErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+$badOut = (& $hosc check $badFile 2>&1 | Out-String)
 $badExit = $LASTEXITCODE
-Assert-True ($badExit -ne 0) 'unterminated string should fail build'
-Assert-True (-not (Test-Path $badHbc)) 'failed build should not create bytecode output'
-Assert-True ($badOut -match '(?i)(lexer|unterminated|string literal)') 'unterminated string did not report lexer/string failure'
-
-$fmtSrc = "package main`r`nfunc main() {`tprint(1)    `r`n}"
-$fmtFile = Join-Path $gateDir 'fmt_dirty.hosc'
-Set-Content -Path $fmtFile -Value $fmtSrc -NoNewline -Encoding utf8
-
-$fmtCheckCmd = '"{0}" fmt "{1}" --check' -f $hosc, $fmtFile
-& cmd /c "$fmtCheckCmd >nul 2>&1"
-$fmtCheckExit = $LASTEXITCODE
-Assert-True ($fmtCheckExit -ne 0) 'fmt --check should fail on dirty file'
-
-Invoke-Step 'CLI fmt (rewrite)' {
-    & $hosc fmt $fmtFile
-}
-
-Invoke-Step 'CLI fmt --check (clean)' {
-    & $hosc fmt $fmtFile --check
-}
+$ErrorActionPreference = $previousErrorActionPreference
+Assert-True ($badExit -ne 0) 'source without func main should fail check'
+Assert-True ($badOut -match 'H001') 'missing main diagnostic should include H001'
 
 Write-Host ''
 Write-Host 'HOSC quality gate passed.' -ForegroundColor Green

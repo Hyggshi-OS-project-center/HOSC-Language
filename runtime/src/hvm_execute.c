@@ -910,9 +910,24 @@ static int hvm_exec_scroll_y(HVM_VM *vm, const HVM_Instruction *instr) {
     return 1;
 }
 
+static int hvm_require_host_file_io(HVM_VM *vm) {
+    if (vm && vm->allow_host_file_io) return 1;
+    hvm_set_error_msg(vm, "Host file I/O capability is disabled");
+    if (vm) vm->running = 0;
+    return 0;
+}
+
+static int hvm_require_host_shell_exec(HVM_VM *vm) {
+    if (vm && vm->allow_host_shell_exec) return 1;
+    hvm_set_error_msg(vm, "Host shell execution capability is disabled");
+    if (vm) vm->running = 0;
+    return 0;
+}
+
 static int hvm_exec_file_open_dialog(HVM_VM *vm, const HVM_Instruction *instr) {
     char *path_value = NULL;
     (void)instr;
+    if (!hvm_require_host_file_io(vm)) return 1;
     if (vm->services) path_value = vm->services->gui.open_file_dialog(vm->services);
     if (!path_value) path_value = strdup("");
     if (!path_value || !hvm_push_string(vm, path_value)) {
@@ -928,6 +943,7 @@ static int hvm_exec_file_open_dialog(HVM_VM *vm, const HVM_Instruction *instr) {
 static int hvm_exec_file_save_dialog(HVM_VM *vm, const HVM_Instruction *instr) {
     char *path_value = NULL;
     (void)instr;
+    if (!hvm_require_host_file_io(vm)) return 1;
     if (vm->services) path_value = vm->services->gui.save_file_dialog(vm->services);
     if (!path_value) path_value = strdup("");
     if (!path_value || !hvm_push_string(vm, path_value)) {
@@ -944,6 +960,7 @@ static int hvm_exec_file_read(HVM_VM *vm, const HVM_Instruction *instr) {
     const char *path;
     char *content = NULL;
     (void)instr;
+    if (!hvm_require_host_file_io(vm)) return 1;
     if (vm->stack_top < 1) { hvm_set_error_msg(vm, "Stack underflow in FILE_READ"); vm->running = 0; return 1; }
     path_value = hvm_pop(vm);
     path = (path_value.type == HVM_TYPE_STRING && path_value.data.string_value)
@@ -975,6 +992,7 @@ static int hvm_exec_file_read_line(HVM_VM *vm, const HVM_Instruction *instr) {
     char *line = NULL;
     int line_no;
     (void)instr;
+    if (!hvm_require_host_file_io(vm)) return 1;
     if (vm->stack_top < 2) { hvm_set_error_msg(vm, "Stack underflow in FILE_READ_LINE"); vm->running = 0; return 1; }
     line_value = hvm_pop(vm);
     path_value = hvm_pop(vm);
@@ -1011,6 +1029,7 @@ static int hvm_exec_file_write(HVM_VM *vm, const HVM_Instruction *instr) {
     const char *text;
     int ok;
     (void)instr;
+    if (!hvm_require_host_file_io(vm)) return 1;
     if (vm->stack_top < 2) { hvm_set_error_msg(vm, "Stack underflow in FILE_WRITE"); vm->running = 0; return 1; }
     content_value = hvm_pop(vm);
     path_value = hvm_pop(vm);
@@ -1118,6 +1137,7 @@ static int hvm_exec_command(HVM_VM *vm, const HVM_Instruction *instr) {
     char *out = NULL;
     (void)instr;
 
+    if (!hvm_require_host_shell_exec(vm)) return 1;
     if (vm->stack_top < 1) { hvm_set_error_msg(vm, "Stack underflow in EXEC_COMMAND"); vm->running = 0; return 1; }
 
     cmd_value = hvm_pop(vm);

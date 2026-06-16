@@ -110,6 +110,7 @@ Token* lexer_tokenize(const char* source) {
             else if (len == 7 && strncmp(start, "package", 7) == 0) tokens[count++] = make_simple(TOKEN_PACKAGE, tok_line, tok_col);
             else if (len == 6 && strncmp(start, "import", 6) == 0) tokens[count++] = make_simple(TOKEN_IMPORT, tok_line, tok_col);
             else if (len == 5 && strncmp(start, "print", 5) == 0) tokens[count++] = make_simple(TOKEN_PRINT, tok_line, tok_col);
+            else if (len == 6 && strncmp(start, "prints", 6) == 0) tokens[count++] = make_simple(TOKEN_PRINTS, tok_line, tok_col);
             else if (len == 2 && strncmp(start, "if", 2) == 0) tokens[count++] = make_simple(TOKEN_IF, tok_line, tok_col);
             else if (len == 4 && strncmp(start, "else", 4) == 0) tokens[count++] = make_simple(TOKEN_ELSE, tok_line, tok_col);
             else if (len == 5 && strncmp(start, "while", 5) == 0) tokens[count++] = make_simple(TOKEN_WHILE, tok_line, tok_col);
@@ -132,6 +133,84 @@ Token* lexer_tokenize(const char* source) {
                 }
                 count++;
             }
+            continue;
+        }
+
+        if (*p == '`') {
+            size_t str_cap = 64;
+            size_t str_len = 0;
+            char *str_buf = (char *)malloc(str_cap);
+            if (!str_buf) {
+                free_partial_tokens(tokens, count);
+                return NULL;
+            }
+
+            p++;
+            col++;
+
+            while (*p && *p != '`') {
+                char ch = *p;
+
+                if (ch == '\r') {
+                    ch = '\n';
+                    if (*(p + 1) == '\n') {
+                        p += 2;
+                    } else {
+                        p++;
+                    }
+                    line++;
+                    col = 1;
+                } else {
+                    p++;
+                    if (ch == '\n') {
+                        line++;
+                        col = 1;
+                    } else {
+                        col++;
+                    }
+                }
+
+                if (str_len + 1 >= str_cap) {
+                    char *new_buf;
+                    str_cap *= 2;
+                    new_buf = (char *)realloc(str_buf, str_cap);
+                    if (!new_buf) {
+                        free(str_buf);
+                        free_partial_tokens(tokens, count);
+                        return NULL;
+                    }
+                    str_buf = new_buf;
+                }
+
+                str_buf[str_len++] = ch;
+            }
+
+            if (*p != '`') {
+                fprintf(stderr, "Lexer error (%d:%d): unterminated raw string literal\n", tok_line, tok_col);
+                free(str_buf);
+                free_partial_tokens(tokens, count);
+                return NULL;
+            }
+
+            if (str_len + 1 >= str_cap) {
+                char *new_buf = (char *)realloc(str_buf, str_len + 1);
+                if (!new_buf) {
+                    free(str_buf);
+                    free_partial_tokens(tokens, count);
+                    return NULL;
+                }
+                str_buf = new_buf;
+            }
+            str_buf[str_len] = '\0';
+
+            tokens[count].type = TOKEN_STRING;
+            tokens[count].line = tok_line;
+            tokens[count].column = tok_col;
+            tokens[count].value.string_lit = str_buf;
+
+            p++;
+            col++;
+            count++;
             continue;
         }
 
@@ -442,6 +521,12 @@ Token* lexer_tokenize(const char* source) {
                 col++;
                 break;
 
+            case ':':
+                tokens[count++] = make_simple(TOKEN_COLON, tok_line, tok_col);
+                p++;
+                col++;
+                break;
+
             case '(':
                 tokens[count++] = make_simple(TOKEN_LPAREN, tok_line, tok_col);
                 p++;
@@ -450,6 +535,18 @@ Token* lexer_tokenize(const char* source) {
 
             case ')':
                 tokens[count++] = make_simple(TOKEN_RPAREN, tok_line, tok_col);
+                p++;
+                col++;
+                break;
+
+            case '[':
+                tokens[count++] = make_simple(TOKEN_LBRACKET, tok_line, tok_col);
+                p++;
+                col++;
+                break;
+
+            case ']':
+                tokens[count++] = make_simple(TOKEN_RBRACKET, tok_line, tok_col);
                 p++;
                 col++;
                 break;

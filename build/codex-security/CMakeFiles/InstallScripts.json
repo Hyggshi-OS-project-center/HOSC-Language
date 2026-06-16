@@ -1,0 +1,12 @@
+{
+	"InstallScripts" : 
+	[
+		"C:/Users/Laptop dell/Downloads/hosc-language/build/codex-security/cmake_install.cmake",
+		"C:/Users/Laptop dell/Downloads/hosc-language/build/codex-security/compiler/cmake_install.cmake",
+		"C:/Users/Laptop dell/Downloads/hosc-language/build/codex-security/vm/cmake_install.cmake",
+		"C:/Users/Laptop dell/Downloads/hosc-language/build/codex-security/runtime/cmake_install.cmake",
+		"C:/Users/Laptop dell/Downloads/hosc-language/build/codex-security/cli/cmake_install.cmake",
+		"C:/Users/Laptop dell/Downloads/hosc-language/build/codex-security/tests/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

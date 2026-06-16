@@ -1,0 +1,5 @@
+package main
+
+func helper_msg() {
+    print("Hello from utils")
+}

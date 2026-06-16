@@ -19,14 +19,17 @@ from PyQt5.QtWidgets import (
     QShortcut,
     QCompleter,
     QInputDialog,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLineEdit,
+    QPushButton,
+    QLabel,
 )
 
 
-DEFAULT_TEMPLATE = """package main
-
-func main() {
-    var x = 10
-    print(x + 20)
+DEFAULT_TEMPLATE = """func main() {
+    print("Hello, HOSC");
 }
 """
 
@@ -45,35 +48,10 @@ BASE_COMPLETIONS = [
     "false",
     "break",
     "continue",
-    "window",
-    "menu_notepad",
-    "button",
-    "input",
-    "textarea",
-    "textarea_set",
-    "label",
-    "text",
-    "color",
-    "font",
-    "clear",
-    "loop",
-    "scroll_range",
-    "scroll_y",
-    "open_file_dialog",
-    "save_file_dialog",
-    "file_read",
-    "file_read_line",
-    "file_write",
-    "exec",
-    "nl",
-    "mouse_x",
-    "mouse_y",
-    "mouse_down",
-    "mouse_click",
-    "key_down",
-    "delta",
-    "layout_reset",
-    "layout_next",
+    "int",
+    "float",
+    "string",
+    "bool",
 ]
 
 
@@ -148,18 +126,21 @@ class HOSCIDEMain(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("HOSC VSCode Mini (Qt5)")
+        self.setWindowTitle("HOSC Mini IDE (Qt5)")
         self.resize(1280, 820)
 
         self.project_root = Path(__file__).resolve().parents[1]
         self.examples_dirs = [
             self.project_root / "framework" / "examples",
+            self.project_root / "examples" / "level_a",
             self.project_root / "examples",
         ]
-        self.compiler = self.project_root / "tools" / "bin" / "hosc-compiler.exe"
-        self.runtime = self.project_root / "tools" / "bin" / "hvm.exe"
-        self.cli = self.project_root / "tools" / "bin" / "hosc.exe"
-        self.build_dir = self.project_root / "build"
+        self.build_script = self.project_root / "tools" / "build.ps1"
+        self.cli = self.project_root / "build" / "bootstrap" / "bin" / "hosc.exe"
+        self.runtime_host = self.project_root / "build" / "bootstrap" / "bin" / "hvm_host.exe"
+        self.framework_runner = self.project_root / "framework" / "bin" / "hosc_framework.exe"
+        self.build_dir = self.project_root / "build" / "bootstrap"
+        self.terminal_cwd = self.project_root
 
         self.explorer_paths = []
         self.untitled_count = 1
@@ -186,10 +167,59 @@ class HOSCIDEMain(QMainWindow):
         self.output.setReadOnly(True)
         self.output.setFont(QFont("Consolas", 10))
 
+        self.terminal_output = QTextEdit()
+        self.terminal_output.setReadOnly(True)
+        self.terminal_output.setFont(QFont("Consolas", 10))
+
+        self.terminal_input = QLineEdit()
+        self.terminal_input.setPlaceholderText(
+            "PowerShell command. Press Enter to run. Use 'cd <path>' to change terminal folder."
+        )
+        self.terminal_input.returnPressed.connect(self.run_terminal_command)
+
+        self.terminal_run_btn = QPushButton("Run")
+        self.terminal_run_btn.clicked.connect(self.run_terminal_command)
+
+        self.terminal_clear_btn = QPushButton("Clear")
+        self.terminal_clear_btn.clicked.connect(self.clear_terminal_output)
+
+        self.terminal_cwd_label = QLabel()
+        self.update_terminal_cwd_label()
+
+        terminal_meta_row = QHBoxLayout()
+        terminal_meta_row.setContentsMargins(0, 0, 0, 0)
+        terminal_meta_row.setSpacing(6)
+        terminal_meta_row.addWidget(self.terminal_cwd_label, 1)
+        terminal_meta_row.addWidget(self.terminal_clear_btn)
+
+        terminal_input_row = QHBoxLayout()
+        terminal_input_row.setContentsMargins(0, 0, 0, 0)
+        terminal_input_row.setSpacing(6)
+        terminal_input_row.addWidget(self.terminal_input, 1)
+        terminal_input_row.addWidget(self.terminal_run_btn)
+
+        output_panel = QWidget()
+        output_layout = QVBoxLayout(output_panel)
+        output_layout.setContentsMargins(0, 0, 0, 0)
+        output_layout.setSpacing(0)
+        output_layout.addWidget(self.output, 1)
+
+        terminal_panel = QWidget()
+        terminal_layout = QVBoxLayout(terminal_panel)
+        terminal_layout.setContentsMargins(0, 0, 0, 0)
+        terminal_layout.setSpacing(6)
+        terminal_layout.addWidget(self.terminal_output, 1)
+        terminal_layout.addLayout(terminal_meta_row)
+        terminal_layout.addLayout(terminal_input_row)
+
+        self.bottom_tabs = QTabWidget()
+        self.output_tab_index = self.bottom_tabs.addTab(output_panel, "Output")
+        self.terminal_tab_index = self.bottom_tabs.addTab(terminal_panel, "Terminal")
+
         right_splitter = QSplitter(Qt.Vertical)
         right_splitter.addWidget(self.tabs)
-        right_splitter.addWidget(self.output)
-        right_splitter.setSizes([560, 220])
+        right_splitter.addWidget(self.bottom_tabs)
+        right_splitter.setSizes([560, 260])
 
         splitter.addWidget(self.file_list)
         splitter.addWidget(right_splitter)
@@ -238,6 +268,21 @@ class HOSCIDEMain(QMainWindow):
                 border: 1px solid #333a46;
                 selection-background-color: #3b5170;
             }
+            QLineEdit {
+                background: #1f2329;
+                color: #d7dae0;
+                border: 1px solid #333a46;
+                padding: 6px;
+            }
+            QPushButton {
+                background: #2b313b;
+                color: #d7dae0;
+                border: 1px solid #3a4250;
+                padding: 6px 12px;
+            }
+            QPushButton:hover { background: #3a4250; }
+            QPushButton:pressed { background: #232933; }
+            QLabel { color: #aeb6c3; }
             QStatusBar {
                 background: #181b20;
                 color: #d7dae0;
@@ -278,11 +323,15 @@ class HOSCIDEMain(QMainWindow):
         self.find_next_action.setShortcut("F3")
         self.find_next_action.triggered.connect(self.find_next)
 
+        self.build_toolchain_action = QAction("Build Toolchain", self)
+        self.build_toolchain_action.setShortcut("Ctrl+Shift+T")
+        self.build_toolchain_action.triggered.connect(self.build_toolchain)
+
         self.build_action = QAction("Build (.hbc)", self)
         self.build_action.setShortcut("Ctrl+B")
         self.build_action.triggered.connect(self.build_file)
 
-        self.build_exe_action = QAction("Build EXE", self)
+        self.build_exe_action = QAction("Build Bundle (NYI)", self)
         self.build_exe_action.setShortcut("Ctrl+Shift+E")
         self.build_exe_action.triggered.connect(self.build_exe_file)
 
@@ -294,7 +343,7 @@ class HOSCIDEMain(QMainWindow):
         self.run_action.setShortcut("F5")
         self.run_action.triggered.connect(self.run_file)
 
-        self.run_exe_action = QAction("Run EXE", self)
+        self.run_exe_action = QAction("Run .hbc", self)
         self.run_exe_action.setShortcut("F6")
         self.run_exe_action.triggered.connect(self.run_exe_file)
 
@@ -305,6 +354,13 @@ class HOSCIDEMain(QMainWindow):
         self.refresh_action = QAction("Refresh Explorer", self)
         self.refresh_action.triggered.connect(self.refresh_explorer)
 
+        self.focus_terminal_action = QAction("Focus Terminal", self)
+        self.focus_terminal_action.setShortcut("Ctrl+`")
+        self.focus_terminal_action.triggered.connect(self.focus_terminal_input)
+
+        self.clear_terminal_action = QAction("Clear Terminal Output", self)
+        self.clear_terminal_action.triggered.connect(self.clear_terminal_output)
+
         file_menu.addAction(self.new_action)
         file_menu.addAction(self.open_action)
         file_menu.addAction(self.save_action)
@@ -313,6 +369,7 @@ class HOSCIDEMain(QMainWindow):
         edit_menu.addAction(self.find_action)
         edit_menu.addAction(self.find_next_action)
 
+        build_menu.addAction(self.build_toolchain_action)
         build_menu.addAction(self.check_action)
         build_menu.addAction(self.build_action)
         build_menu.addAction(self.build_exe_action)
@@ -321,10 +378,13 @@ class HOSCIDEMain(QMainWindow):
         build_menu.addAction(self.fmt_action)
 
         view_menu.addAction(self.refresh_action)
+        view_menu.addAction(self.focus_terminal_action)
+        view_menu.addAction(self.clear_terminal_action)
 
     def init_shortcuts(self):
         QShortcut(QKeySequence("Ctrl+W"), self, activated=self.close_current_tab)
         QShortcut(QKeySequence("Ctrl+Space"), self, activated=self.force_complete)
+        QShortcut(QKeySequence("Ctrl+L"), self, activated=self.focus_terminal_input)
 
     def force_complete(self):
         editor = self.current_editor(silent=True)
@@ -334,9 +394,83 @@ class HOSCIDEMain(QMainWindow):
     def append_output(self, text):
         if text:
             self.output.append(text.rstrip("\n"))
+            self.bottom_tabs.setCurrentIndex(self.output_tab_index)
 
     def append_log(self, text):
         self.output.append(text)
+        self.bottom_tabs.setCurrentIndex(self.output_tab_index)
+
+    def append_terminal_output(self, text):
+        if text:
+            self.terminal_output.append(text.rstrip("\n"))
+            self.bottom_tabs.setCurrentIndex(self.terminal_tab_index)
+
+    def append_terminal_log(self, text):
+        self.terminal_output.append(text)
+        self.bottom_tabs.setCurrentIndex(self.terminal_tab_index)
+
+    def update_terminal_cwd_label(self):
+        self.terminal_cwd_label.setText(f"CWD: {self.terminal_cwd}")
+
+    def focus_terminal_input(self):
+        self.bottom_tabs.setCurrentIndex(self.terminal_tab_index)
+        self.terminal_input.setFocus()
+        self.terminal_input.selectAll()
+
+    def clear_terminal_output(self):
+        self.terminal_output.clear()
+
+    def resolve_terminal_path(self, path_text):
+        clean = path_text.strip().strip('"').strip("'")
+        if not clean:
+            return self.project_root.resolve()
+
+        p = Path(clean).expanduser()
+        if not p.is_absolute():
+            p = (self.terminal_cwd / p).resolve()
+        else:
+            p = p.resolve()
+        return p
+
+    def run_terminal_command(self):
+        cmd_text = self.terminal_input.text().strip()
+        if not cmd_text:
+            return
+
+        self.append_terminal_log(f"PS {self.terminal_cwd}> {cmd_text}")
+        self.terminal_input.clear()
+
+        cd_match = re.match(r"^cd(?:\s+(.+))?$", cmd_text, flags=re.IGNORECASE)
+        if cd_match:
+            target = self.resolve_terminal_path(cd_match.group(1) or "")
+            if not target.exists() or not target.is_dir():
+                self.append_terminal_log(f"Directory not found: {target}")
+                return
+            self.terminal_cwd = target
+            self.update_terminal_cwd_label()
+            return
+
+        try:
+            result = subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-Command",
+                    cmd_text,
+                ],
+                capture_output=True,
+                text=True,
+                cwd=str(self.terminal_cwd),
+            )
+        except OSError as exc:
+            QMessageBox.critical(self, "Terminal", str(exc))
+            return
+
+        self.append_terminal_output(result.stdout or "")
+        self.append_terminal_output(result.stderr or "")
+        self.append_terminal_log(f"Exit code: {result.returncode}")
 
     def current_editor(self, silent=False):
         editor = self.tabs.currentWidget()
@@ -366,7 +500,7 @@ class HOSCIDEMain(QMainWindow):
     def update_window_title(self):
         editor = self.current_editor(silent=True)
         if editor is None:
-            self.setWindowTitle("HOSC VSCode Mini (Qt5)")
+            self.setWindowTitle("HOSC Mini IDE (Qt5)")
             return
 
         if getattr(editor, "file_path", None):
@@ -377,7 +511,7 @@ class HOSCIDEMain(QMainWindow):
         if editor.document().isModified():
             title = "*" + title
 
-        self.setWindowTitle(f"HOSC VSCode Mini (Qt5) - {title}")
+        self.setWindowTitle(f"HOSC Mini IDE (Qt5) - {title}")
 
     def update_status(self, editor=None):
         if editor is None:
@@ -553,30 +687,46 @@ class HOSCIDEMain(QMainWindow):
             self.tabs.setCurrentIndex(previous_index)
         return ok
 
-    def ensure_toolchain(self):
-        missing = []
-        if not self.compiler.exists():
-            missing.append(str(self.compiler))
-        if not self.runtime.exists():
-            missing.append(str(self.runtime))
-        if missing:
-            QMessageBox.critical(
-                self,
-                "Toolchain missing",
-                "Missing binaries. Build first with tools/build.ps1:\n\n" + "\n".join(missing),
-            )
-            return False
-        return True
-
     def ensure_cli(self):
         if not self.cli.exists():
             QMessageBox.critical(
                 self,
                 "CLI missing",
-                "Missing hosc.exe. Build first with tools/build.ps1:\n\n" + str(self.cli),
+                "Missing bootstrap CLI. Run Build -> Build Toolchain or tools/build.ps1 first:\n\n" + str(self.cli),
             )
             return False
         return True
+
+    def ensure_runtime_host(self):
+        if not self.runtime_host.exists():
+            QMessageBox.critical(
+                self,
+                "Runtime host missing",
+                "Missing hvm_host.exe. Run Build -> Build Toolchain or tools/build.ps1 first:\n\n" + str(self.runtime_host),
+            )
+            return False
+        return True
+
+    def ensure_framework_runner(self):
+        if not self.framework_runner.exists():
+            QMessageBox.critical(
+                self,
+                "Framework runner missing",
+                "Missing framework runner:\n"
+                + str(self.framework_runner)
+                + "\n\nBuild it first, for example:\n"
+                + "make -f framework/Makefile.framework framework",
+            )
+            return False
+        return True
+
+    def is_framework_source(self, src):
+        framework_root = (self.project_root / "framework").resolve()
+        try:
+            src.resolve().relative_to(framework_root)
+            return True
+        except ValueError:
+            return False
 
     def current_source_path(self):
         editor = self.current_editor()
@@ -708,8 +858,28 @@ class HOSCIDEMain(QMainWindow):
         self.append_output(result.stderr or "")
         return result
 
+    def build_toolchain(self):
+        if not self.build_script.exists():
+            QMessageBox.critical(self, "Build script missing", f"File not found:\n{self.build_script}")
+            return False
+
+        cmd = [
+            "powershell",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(self.build_script),
+        ]
+        result = self.run_subprocess_logged(cmd)
+        if result.returncode != 0:
+            QMessageBox.warning(self, "Build Toolchain", f"Toolchain build failed (exit {result.returncode}).")
+            return False
+
+        self.append_log("Toolchain build success.")
+        return True
+
     def build_file(self):
-        if not self.ensure_toolchain():
+        if not self.ensure_cli():
             return False
 
         src = self.current_source_path()
@@ -722,7 +892,7 @@ class HOSCIDEMain(QMainWindow):
 
         out = src.with_suffix(".hbc")
 
-        cmd = [str(self.compiler), str(src), "-b", str(out)]
+        cmd = [str(self.cli), "build", str(src)]
         result = self.run_subprocess_logged(cmd)
 
         combined = ((result.stdout or "") + "\n" + (result.stderr or "")).strip()
@@ -743,33 +913,12 @@ class HOSCIDEMain(QMainWindow):
         return True
 
     def build_exe_file(self):
-        if not self.ensure_cli():
-            return None
-
-        src = self.current_source_path()
-        if src is None:
-            return None
-
-        editor = self.current_editor(silent=True)
-        if editor is None:
-            return None
-
-        exe_path = src.with_suffix(".exe")
-        cmd = [str(self.cli), "build", str(src), "-o", str(exe_path)]
-        result = self.run_subprocess_logged(cmd)
-        combined = ((result.stdout or "") + "\n" + (result.stderr or "")).strip()
-
-        if result.returncode != 0:
-            parsed_lines = self.parse_error_lines_from_output(combined)
-            if not parsed_lines:
-                parsed_lines = self.lint_error_lines(editor.toPlainText())
-            self.apply_error_underlines(editor, parsed_lines)
-            QMessageBox.warning(self, "Build EXE", f"Build EXE failed (exit {result.returncode}).")
-            return None
-
-        self.apply_error_underlines(editor, [])
-        self.append_log(f"Build EXE success: {exe_path}")
-        return exe_path
+        QMessageBox.information(
+            self,
+            "Build Bundle",
+            "Bundled EXE output is not implemented in the bootstrap runtime yet.\nUse Build (.hbc) or Run .hbc instead.",
+        )
+        return None
     def check_file(self):
         if not self.ensure_cli():
             return False
@@ -850,38 +999,57 @@ class HOSCIDEMain(QMainWindow):
         return True
 
     def run_file(self):
-        if not self.ensure_cli():
+        src = self.current_source_path()
+        if src is None:
+            return
+
+        if self.is_framework_source(src):
+            if not self.ensure_framework_runner():
+                return
+            cmd = [str(self.framework_runner), "run", str(src)]
+            start_cwd = self.project_root
+            started_message = "Framework run started in external process."
+        else:
+            if not self.ensure_cli():
+                return
+            if not self.check_file():
+                return
+            cmd = [str(self.cli), "run", str(src)]
+            start_cwd = self.project_root
+            started_message = "Run started in external process."
+
+        self.append_log(f"$ {' '.join(cmd)}")
+
+        try:
+            subprocess.Popen(cmd, cwd=str(start_cwd))
+            self.append_log(started_message)
+        except OSError as exc:
+            QMessageBox.critical(self, "Run failed", str(exc))
+
+    def run_exe_file(self):
+        if not self.ensure_runtime_host():
             return
 
         src = self.current_source_path()
         if src is None:
             return
 
-        if not self.check_file():
+        if not self.build_file():
             return
 
-        cmd = [str(self.cli), "run", str(src)]
+        bytecode_path = src.with_suffix(".hbc")
+        if not bytecode_path.exists():
+            QMessageBox.critical(self, "Run .hbc", f"Bytecode file not found:\n{bytecode_path}")
+            return
+
+        cmd = [str(self.runtime_host), str(bytecode_path)]
         self.append_log(f"$ {' '.join(cmd)}")
 
         try:
-            subprocess.Popen(cmd, cwd=str(self.project_root))
-            self.append_log("Run started in external process.")
+            subprocess.Popen(cmd, cwd=str(bytecode_path.parent))
+            self.append_log("Bytecode started in external runtime host.")
         except OSError as exc:
-            QMessageBox.critical(self, "Run failed", str(exc))
-
-    def run_exe_file(self):
-        exe_path = self.build_exe_file()
-        if not exe_path:
-            return
-
-        cmd = [str(exe_path)]
-        self.append_log(f"$ {' '.join(cmd)}")
-
-        try:
-            subprocess.Popen(cmd, cwd=str(exe_path.parent))
-            self.append_log("EXE started in external process.")
-        except OSError as exc:
-            QMessageBox.critical(self, "Run EXE failed", str(exc))
+            QMessageBox.critical(self, "Run .hbc failed", str(exc))
 
     def find_text(self):
         editor = self.current_editor(silent=True)
@@ -924,7 +1092,7 @@ class HOSCIDEMain(QMainWindow):
         files = []
         for d in self.examples_dirs:
             if d.exists():
-                files.extend(sorted(d.glob("*.hosc")))
+                files.extend(sorted(d.rglob("*.hosc")))
 
         files.extend(sorted(self.project_root.glob("*.hosc")))
 

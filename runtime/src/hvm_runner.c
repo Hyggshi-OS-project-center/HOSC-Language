@@ -17,6 +17,8 @@
 #define MAGIC "HBC1"
 #define BUNDLE_MAGIC "HOSCEXE1"
 #define BUNDLE_MAGIC_LEN 8
+#define HVM_RUNNER_MAX_INSTRUCTIONS 65536u
+#define HVM_RUNNER_MAX_STRING_OPERAND (16u * 1024u * 1024u)
 
 typedef enum { OP_NONE=0, OP_INT=1, OP_FLOAT=2, OP_STRING=3 } OpKind;
 
@@ -99,15 +101,17 @@ static HVM_Instruction *parse_bytecode_buffer(const unsigned char *buf, size_t s
 
     memcpy(&count, buf + 4, sizeof(uint32_t));
     offset = 8;
+    if (count > HVM_RUNNER_MAX_INSTRUCTIONS) return NULL;
+    if (count > 0 && (size - offset) / 2 < count) return NULL;
 
-    code = (HVM_Instruction *)calloc(count, sizeof(HVM_Instruction));
+    code = (HVM_Instruction *)calloc(count ? count : 1, sizeof(HVM_Instruction));
     if (!code) return NULL;
 
     for (i = 0; i < count; i++) {
         uint8_t op;
         uint8_t kind;
 
-        if (offset + 2 > size) {
+        if (size - offset < 2) {
             free_bytecode(code, i);
             return NULL;
         }
@@ -118,7 +122,7 @@ static HVM_Instruction *parse_bytecode_buffer(const unsigned char *buf, size_t s
         code[i].opcode = (HVM_Opcode)op;
         switch (kind) {
             case OP_INT:
-                if (offset + sizeof(int64_t) > size) {
+                if (size - offset < sizeof(int64_t)) {
                     free_bytecode(code, i + 1);
                     return NULL;
                 }
@@ -127,7 +131,7 @@ static HVM_Instruction *parse_bytecode_buffer(const unsigned char *buf, size_t s
                 break;
 
             case OP_FLOAT:
-                if (offset + sizeof(double) > size) {
+                if (size - offset < sizeof(double)) {
                     free_bytecode(code, i + 1);
                     return NULL;
                 }
@@ -137,20 +141,20 @@ static HVM_Instruction *parse_bytecode_buffer(const unsigned char *buf, size_t s
 
             case OP_STRING: {
                 uint32_t len = 0;
-                if (offset + sizeof(uint32_t) > size) {
+                if (size - offset < sizeof(uint32_t)) {
                     free_bytecode(code, i + 1);
                     return NULL;
                 }
                 memcpy(&len, buf + offset, sizeof(uint32_t));
                 offset += sizeof(uint32_t);
 
-                code[i].operand.string_operand = (char *)calloc((size_t)len + 1, 1);
-                if (!code[i].operand.string_operand) {
+                if (len > HVM_RUNNER_MAX_STRING_OPERAND || (size_t)len > size - offset) {
                     free_bytecode(code, i + 1);
                     return NULL;
                 }
 
-                if (offset + len > size) {
+                code[i].operand.string_operand = (char *)calloc((size_t)len + 1, 1);
+                if (!code[i].operand.string_operand) {
                     free_bytecode(code, i + 1);
                     return NULL;
                 }
@@ -368,7 +372,6 @@ done:
     if (vm) hvm_destroy(vm);
     return rc;
 }
-
 
 
 

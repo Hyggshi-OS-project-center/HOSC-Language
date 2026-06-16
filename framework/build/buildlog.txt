@@ -1,0 +1,18 @@
+[2026-04-16 19:53:29] [INFO] HOSC Runtime initialized (v1.0.0), GUI backend=win32
+core module initialized
+gui module initialized (win32)
+win32 module initialized
+HOSC framework runtime started (GUI backend: win32)
+Build succeeded: framework\build\Music.exe
+Artifact: framework\build\Music.hfb
+Bytecode: framework\build\Music.hbc
+Instructions: 7
+[2026-04-16 19:53:29] [INFO] Shutting down HOSC Runtime
+core module cleaned up
+=== HOSC Memory Statistics ===
+Total Allocated: 48 bytes
+Total Deallocated: 136 bytes
+Current In Use: 0 bytes
+Peak Usage: 48 bytes
+Allocation Count: 3
+==============================

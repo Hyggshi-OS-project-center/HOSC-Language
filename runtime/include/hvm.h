@@ -194,6 +194,8 @@ typedef struct {
 
     HoscApiContext *cpp_api;
     HVM_RuntimeServices *services;
+    int allow_host_file_io;
+    int allow_host_shell_exec;
 
     char *scratch_a;
     size_t scratch_a_cap;
@@ -205,6 +207,7 @@ typedef struct {
 
 HVM_VM* hvm_create(void);
 void hvm_destroy(HVM_VM* vm);
+void hvm_set_host_capabilities(HVM_VM* vm, int allow_file_io, int allow_shell_exec);
 int hvm_load_bytecode(HVM_VM* vm, const HVM_Instruction* instructions, size_t count);
 int hvm_run(HVM_VM* vm);
 
@@ -246,4 +249,3 @@ void hvm_disassemble(HVM_VM* vm);
 #endif
 
 #endif // HVM_H
-

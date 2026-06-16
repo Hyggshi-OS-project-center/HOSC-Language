@@ -1,0 +1,10 @@
+HOSC_FRAMEWORK_BUILD 1
+source=C:\Users\Laptop dell\Downloads\hosc-language\framework\examples\Music.hosc
+instructions=7
+0000 window a=980 b=620 c=0 d=980 e=620 flags=4 text=HOSC Media Center extra=framework/examples/asset/icon.ico
+0001 theme a=0 b=0 c=0 d=0 e=0 flags=0 text= extra=
+0002 audio.play a=0 b=0 c=0 d=0 e=0 flags=0 text=framework/examples/asset/Dreams-pt-II-Instrumental.mp3 extra=
+0003 media_player a=0 b=0 c=980 d=620 e=0 flags=0 text=Dreams-pt-II-Instrumental extra=framework/examples/asset/Dreams-pt-II-Instrumental.mp3
+0004 loop_begin a=0 b=100 c=0 d=0 e=0 flags=0 text= extra=
+0005 pump_events a=0 b=0 c=0 d=0 e=0 flags=0 text= extra=
+0006 loop_end a=0 b=0 c=0 d=0 e=0 flags=0 text= extra=

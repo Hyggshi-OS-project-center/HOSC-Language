@@ -81,15 +81,46 @@ typedef struct {
     int mouse_button;
 } HOSCGUIEvent;
 
+typedef struct {
+    const char* title;
+    int width;
+    int height;
+    bool resizable;
+    bool fullscreen;
+    const char* icon;
+    int min_width;
+    int min_height;
+    bool center;
+} HOSCGUIWindowOptions;
+
 bool hosc_gui_init(void);
 void hosc_gui_shutdown(void);
 HOSCGUIBackend hosc_gui_backend(void);
 const char* hosc_gui_backend_name(void);
+void hosc_runtime_set_base_dir(const char* base_dir);
 bool hosc_gui_create_window(const char* title, int width, int height);
+bool hosc_gui_create_window_ex(const HOSCGUIWindowOptions* options);
 void hosc_gui_draw_text(int x, int y, const char* text);
+void hosc_gui_draw_text_styled(int x, int y, const char* text, int size, int r, int g, int b, bool bold);
+void hosc_gui_draw_rect(int x, int y, int width, int height, int r, int g, int b, bool filled);
+void hosc_gui_draw_round_rect(int x, int y, int width, int height, int radius,
+                              int fill_r, int fill_g, int fill_b,
+                              int border_r, int border_g, int border_b,
+                              int border_width);
+void hosc_gui_draw_image(int x, int y, int width, int height, const char* image_path);
+void hosc_gui_suspend_present(void);
+void hosc_gui_resume_present(void);
+void hosc_gui_flush(void);
 void hosc_gui_pump_events(void);
 bool hosc_gui_poll_event(HOSCGUIEvent* out_event);
 bool hosc_gui_is_running(void);
+bool hosc_audio_play_file(const char* audio_path, bool async_play);
+void hosc_audio_stop(void);
+bool hosc_gui_pick_audio_file(char* out_path, size_t out_cap);
+bool hosc_audio_has_internal_playback(void);
+int hosc_audio_get_position_ms(void);
+int hosc_audio_get_duration_ms(void);
+bool hosc_audio_seek_ms(int position_ms);
 
 // ============================================================================
 // MEMORY MANAGEMENT FRAMEWORK
@@ -295,3 +326,4 @@ extern HOSCModule hosc_gui_module;
 #endif
 
 #endif // HOSC_RUNTIME_H
+

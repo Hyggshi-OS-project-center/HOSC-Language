@@ -88,9 +88,9 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path .\build | Out-Null
-          .\tools\bin\hosc.exe --version
-          .\tools\bin\hosc.exe check .\examples\hello_world\hello.hosc
-          .\tools\bin\hosc.exe build .\examples\hello_world\hello.hosc -o .\build\ci-hello.hbc
+          .\tools\bin\hosc.exe version
+          .\tools\bin\hosc.exe check .\framework\examples\Hello.hosc
+          .\tools\bin\hosc.exe run .\framework\examples\Hello.hosc -o .\build\ci-hello.hbc
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -98,9 +98,8 @@ jobs:
           name: hosc-windows-binaries
           path: |
             tools/bin/hosc.exe
-            tools/bin/hosc_compiler.exe
             tools/bin/hvm.exe
-            tools/bin/libhppapi.a
+            tools/bin/hvm_host.exe
             build/ci-hello.hbc
           if-no-files-found: error
           retention-days: 7

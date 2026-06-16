@@ -1,0 +1,12 @@
+package main
+
+import "utils.hosc"
+import "blue_archive_chat.hosc" // ra ASCII art Shiroko blue_archive.hosc
+import "blue_archive.hosc"
+
+func main() {
+    helper_msg()
+    print("Hello from main")
+    blue_archive_chat()
+    blue_archive()
+}

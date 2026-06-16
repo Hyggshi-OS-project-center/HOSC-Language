@@ -15,6 +15,17 @@
 #define HVM_MAX_GLOBALS 512
 #define HVM_MAX_INSTRUCTIONS 65536
 #define HVM_GC_INITIAL_THRESHOLD (64u * 1024u)
+
+static int hvm_env_truthy(const char *name) {
+    const char *value = getenv(name);
+    if (!value || !value[0]) return 0;
+    return strcmp(value, "1") == 0 ||
+           strcmp(value, "true") == 0 ||
+           strcmp(value, "TRUE") == 0 ||
+           strcmp(value, "yes") == 0 ||
+           strcmp(value, "YES") == 0;
+}
+
 #include "hvm_gc.c"
 
 #include "runtime_gui.c"
@@ -31,6 +42,12 @@ HVM_VM* hvm_create(void) {
     vm->gc_enabled = 1;
     vm->gc_pending = 0;
     vm->gc_next_collection = HVM_GC_INITIAL_THRESHOLD;
+    vm->allow_host_file_io = 1;
+    vm->allow_host_shell_exec = 1;
+    if (hvm_env_truthy("HVM_SANDBOX") || hvm_env_truthy("HOSC_SANDBOX")) {
+        vm->allow_host_file_io = 0;
+        vm->allow_host_shell_exec = 0;
+    }
     vm->cpp_api = hosc_api_create(1024 * 1024);
     vm->services = hvm_runtime_services_create_default();
     if (!vm->services) {
@@ -39,6 +56,12 @@ HVM_VM* hvm_create(void) {
         return NULL;
     }
     return vm;
+}
+
+void hvm_set_host_capabilities(HVM_VM* vm, int allow_file_io, int allow_shell_exec) {
+    if (!vm) return;
+    vm->allow_host_file_io = allow_file_io ? 1 : 0;
+    vm->allow_host_shell_exec = allow_shell_exec ? 1 : 0;
 }
 
 void hvm_destroy(HVM_VM* vm) {

@@ -3,8 +3,16 @@
  * Purpose: HOSC source file.
  */
 
+#ifndef WINVER
+#define WINVER 0x0601
+#endif
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0601
+#endif
+
 #include "hosc_runtime.h"
 
+#include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,6 +21,11 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <commdlg.h>
+#include <gdiplus.h>
+#include <mfapi.h>
+#include <mfplay.h>
+#include <propidl.h>
 #endif
 
 // ============================================================================
@@ -51,6 +64,7 @@ static char* hosc_strdup_local(const char* input) {
 
 static HOSCRuntimeContext* g_runtime_context = NULL;
 static uint64_t g_runtime_counter = 0;
+static char g_runtime_base_dir[1024] = {0};
 
 // ============================================================================
 // MEMORY MANAGEMENT
@@ -235,6 +249,52 @@ static bool hosc_gui_pop_event(HOSCGUIEvent* out_event) {
 static const char* HOSC_WINDOW_CLASS_NAME = "HOSCFrameworkWindowClass";
 static HWND g_gui_window = NULL;
 static bool g_gui_class_registered = false;
+static int g_gui_min_width = 0;
+static int g_gui_min_height = 0;
+static HICON g_gui_window_icon = NULL;
+static ULONG_PTR g_gdiplus_token = 0;
+static bool g_gdiplus_started = false;
+static IMFPMediaPlayer* g_audio_player = NULL;
+static bool g_audio_internal_playback = false;
+static bool g_audio_ready = false;
+static bool g_media_foundation_started = false;
+static bool g_com_initialized = false;
+static char g_last_audio_path[MAX_PATH] = {0};
+static HDC g_gui_backbuffer_dc = NULL;
+static HBITMAP g_gui_backbuffer_bitmap = NULL;
+static HBITMAP g_gui_backbuffer_old_bitmap = NULL;
+static int g_gui_backbuffer_width = 0;
+static int g_gui_backbuffer_height = 0;
+static int g_gui_present_suspend_count = 0;
+
+static int hosc_utf8_to_wide(const char* input, WCHAR* output, int output_count);
+static int hosc_wide_to_utf8(const WCHAR* input, char* output, int output_count);
+static void hosc_normalize_windows_path(const char* input, char* output, size_t output_cap);
+
+typedef struct {
+    IMFPMediaPlayerCallback iface;
+    LONG ref_count;
+} HOSCMediaPlayerCallback;
+
+static HRESULT STDMETHODCALLTYPE hosc_media_callback_query_interface(IMFPMediaPlayerCallback* self, REFIID riid, void** out_object);
+static ULONG STDMETHODCALLTYPE hosc_media_callback_add_ref(IMFPMediaPlayerCallback* self);
+static ULONG STDMETHODCALLTYPE hosc_media_callback_release(IMFPMediaPlayerCallback* self);
+static void STDMETHODCALLTYPE hosc_media_callback_on_event(IMFPMediaPlayerCallback* self, MFP_EVENT_HEADER* event_header);
+
+static const IMFPMediaPlayerCallbackVtbl g_hosc_media_callback_vtbl = {
+    hosc_media_callback_query_interface,
+    hosc_media_callback_add_ref,
+    hosc_media_callback_release,
+    hosc_media_callback_on_event
+};
+
+static HOSCMediaPlayerCallback g_hosc_media_callback = {
+    { (IMFPMediaPlayerCallbackVtbl*)&g_hosc_media_callback_vtbl },
+    1
+};
+
+static const IID HOSC_IID_IUNKNOWN = {0x00000000, 0x0000, 0x0000, {0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}};
+static const IID HOSC_IID_IMFPMEDIAPLAYERCALLBACK = {0x766c8ffb, 0x5fdb, 0x4fea, {0xa2, 0x8d, 0xb9, 0x12, 0x99, 0x6f, 0x51, 0xbd}};
 
 static int hosc_lparam_x(LPARAM value) {
     return (int)(short)LOWORD(value);
@@ -244,16 +304,273 @@ static int hosc_lparam_y(LPARAM value) {
     return (int)(short)HIWORD(value);
 }
 
+static HRESULT STDMETHODCALLTYPE hosc_media_callback_query_interface(IMFPMediaPlayerCallback* self, REFIID riid, void** out_object) {
+    if (!out_object) {
+        return E_POINTER;
+    }
+
+    *out_object = NULL;
+    if (InlineIsEqualGUID(riid, &HOSC_IID_IUNKNOWN) ||
+        InlineIsEqualGUID(riid, &HOSC_IID_IMFPMEDIAPLAYERCALLBACK)) {
+        *out_object = self;
+        hosc_media_callback_add_ref(self);
+        return S_OK;
+    }
+
+    return E_NOINTERFACE;
+}
+
+static ULONG STDMETHODCALLTYPE hosc_media_callback_add_ref(IMFPMediaPlayerCallback* self) {
+    HOSCMediaPlayerCallback* callback = (HOSCMediaPlayerCallback*)self;
+    return (ULONG)InterlockedIncrement(&callback->ref_count);
+}
+
+static ULONG STDMETHODCALLTYPE hosc_media_callback_release(IMFPMediaPlayerCallback* self) {
+    HOSCMediaPlayerCallback* callback = (HOSCMediaPlayerCallback*)self;
+    LONG value = InterlockedDecrement(&callback->ref_count);
+    if (value < 1) {
+        callback->ref_count = 1;
+        value = 1;
+    }
+    return (ULONG)value;
+}
+
+static void STDMETHODCALLTYPE hosc_media_callback_on_event(IMFPMediaPlayerCallback* self, MFP_EVENT_HEADER* event_header) {
+    (void)self;
+
+    if (!event_header) {
+        return;
+    }
+
+    if (FAILED(event_header->hrEvent)) {
+        g_audio_ready = false;
+        return;
+    }
+
+    switch (event_header->eEventType) {
+        case MFP_EVENT_TYPE_MEDIAITEM_CREATED:
+        case MFP_EVENT_TYPE_MEDIAITEM_SET:
+        case MFP_EVENT_TYPE_PLAY:
+        case MFP_EVENT_TYPE_POSITION_SET:
+            g_audio_ready = true;
+            break;
+        case MFP_EVENT_TYPE_MEDIAITEM_CLEARED:
+        case MFP_EVENT_TYPE_ERROR:
+            g_audio_ready = false;
+            break;
+        case MFP_EVENT_TYPE_PLAYBACK_ENDED:
+            g_audio_ready = true;
+            break;
+        default:
+            break;
+    }
+}
+
+static void hosc_destroy_window_icon(void) {
+    if (g_gui_window_icon) {
+        DestroyIcon(g_gui_window_icon);
+        g_gui_window_icon = NULL;
+    }
+}
+
+static void hosc_release_backbuffer(void) {
+    if (g_gui_backbuffer_dc) {
+        if (g_gui_backbuffer_old_bitmap) {
+            SelectObject(g_gui_backbuffer_dc, g_gui_backbuffer_old_bitmap);
+            g_gui_backbuffer_old_bitmap = NULL;
+        }
+        if (g_gui_backbuffer_bitmap) {
+            DeleteObject(g_gui_backbuffer_bitmap);
+            g_gui_backbuffer_bitmap = NULL;
+        }
+        DeleteDC(g_gui_backbuffer_dc);
+        g_gui_backbuffer_dc = NULL;
+    }
+    g_gui_backbuffer_width = 0;
+    g_gui_backbuffer_height = 0;
+}
+
+static bool hosc_ensure_backbuffer(int width, int height) {
+    HDC window_dc;
+    RECT rect;
+    HBRUSH brush;
+
+    if (!g_gui_window) {
+        return false;
+    }
+
+    if (width <= 0 || height <= 0) {
+        if (!GetClientRect(g_gui_window, &rect)) {
+            return false;
+        }
+        width = rect.right - rect.left;
+        height = rect.bottom - rect.top;
+    }
+
+    if (width <= 0 || height <= 0) {
+        return false;
+    }
+
+    if (g_gui_backbuffer_dc &&
+        g_gui_backbuffer_width == width &&
+        g_gui_backbuffer_height == height) {
+        return true;
+    }
+
+    hosc_release_backbuffer();
+
+    window_dc = GetDC(g_gui_window);
+    if (!window_dc) {
+        return false;
+    }
+
+    g_gui_backbuffer_dc = CreateCompatibleDC(window_dc);
+    if (!g_gui_backbuffer_dc) {
+        ReleaseDC(g_gui_window, window_dc);
+        return false;
+    }
+
+    g_gui_backbuffer_bitmap = CreateCompatibleBitmap(window_dc, width, height);
+    ReleaseDC(g_gui_window, window_dc);
+    if (!g_gui_backbuffer_bitmap) {
+        hosc_release_backbuffer();
+        return false;
+    }
+
+    g_gui_backbuffer_old_bitmap = (HBITMAP)SelectObject(g_gui_backbuffer_dc, g_gui_backbuffer_bitmap);
+    g_gui_backbuffer_width = width;
+    g_gui_backbuffer_height = height;
+
+    brush = CreateSolidBrush(RGB(255, 255, 255));
+    if (brush) {
+        RECT fill_rect;
+        fill_rect.left = 0;
+        fill_rect.top = 0;
+        fill_rect.right = width;
+        fill_rect.bottom = height;
+        FillRect(g_gui_backbuffer_dc, &fill_rect, brush);
+        DeleteObject(brush);
+    }
+
+    return true;
+}
+
+static HDC hosc_gui_begin_draw(void) {
+    if (g_gui_backend != HOSC_GUI_BACKEND_WIN32 || !g_gui_window) {
+        return NULL;
+    }
+
+    if (!hosc_ensure_backbuffer(0, 0)) {
+        return NULL;
+    }
+
+    return g_gui_backbuffer_dc;
+}
+
+static void hosc_gui_present(void) {
+    HDC window_dc;
+
+    if (!g_gui_window || !g_gui_backbuffer_dc || g_gui_backbuffer_width <= 0 || g_gui_backbuffer_height <= 0) {
+        return;
+    }
+    if (g_gui_present_suspend_count > 0) {
+        return;
+    }
+
+    window_dc = GetDC(g_gui_window);
+    if (!window_dc) {
+        return;
+    }
+
+    BitBlt(window_dc, 0, 0, g_gui_backbuffer_width, g_gui_backbuffer_height,
+           g_gui_backbuffer_dc, 0, 0, SRCCOPY);
+    ReleaseDC(g_gui_window, window_dc);
+}
+
+void hosc_gui_suspend_present(void) {
+#ifdef _WIN32
+    g_gui_present_suspend_count++;
+#endif
+}
+
+void hosc_gui_resume_present(void) {
+#ifdef _WIN32
+    if (g_gui_present_suspend_count > 0) {
+        g_gui_present_suspend_count--;
+    }
+#endif
+}
+
+void hosc_gui_flush(void) {
+#ifdef _WIN32
+    hosc_gui_present();
+#endif
+}
+
+static void hosc_apply_window_icon(HWND hwnd, const char* icon_path) {
+    HICON icon;
+    char normalized_path[1024];
+    WCHAR wide_path[1024];
+
+    hosc_destroy_window_icon();
+    if (!icon_path || !*icon_path) {
+        return;
+    }
+
+    hosc_normalize_windows_path(icon_path, normalized_path, sizeof(normalized_path));
+    if (!hosc_utf8_to_wide(normalized_path, wide_path, (int)(sizeof(wide_path) / sizeof(wide_path[0])))) {
+        return;
+    }
+
+    icon = (HICON)LoadImageW(NULL, wide_path, IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE);
+    if (!icon) {
+        return;
+    }
+
+    g_gui_window_icon = icon;
+    SendMessageA(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)icon);
+    SendMessageA(hwnd, WM_SETICON, ICON_BIG, (LPARAM)icon);
+}
+
 static LRESULT CALLBACK hosc_window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
     switch (msg) {
+        case WM_PAINT: {
+            PAINTSTRUCT ps;
+            HDC dc = BeginPaint(hwnd, &ps);
+            if (dc) {
+                if (hosc_ensure_backbuffer(0, 0) && g_gui_backbuffer_dc) {
+                    BitBlt(dc, 0, 0, g_gui_backbuffer_width, g_gui_backbuffer_height,
+                           g_gui_backbuffer_dc, 0, 0, SRCCOPY);
+                }
+                EndPaint(hwnd, &ps);
+            }
+            return 0;
+        }
+        case WM_ERASEBKGND:
+            return 1;
+        case WM_SIZE:
+            hosc_ensure_backbuffer(LOWORD(lparam), HIWORD(lparam));
+            return 0;
         case WM_CLOSE:
             hosc_gui_push_event(HOSC_GUI_EVENT_QUIT, 0, 0, 0, 0);
             DestroyWindow(hwnd);
             return 0;
         case WM_DESTROY:
             g_gui_running = false;
+            hosc_release_backbuffer();
+            g_gui_window = NULL;
             hosc_gui_push_event(HOSC_GUI_EVENT_QUIT, 0, 0, 0, 0);
             return 0;
+        case WM_GETMINMAXINFO: {
+            MINMAXINFO* minmax = (MINMAXINFO*)lparam;
+            if (g_gui_min_width > 0) {
+                minmax->ptMinTrackSize.x = g_gui_min_width;
+            }
+            if (g_gui_min_height > 0) {
+                minmax->ptMinTrackSize.y = g_gui_min_height;
+            }
+            return 0;
+        }
         case WM_KEYDOWN:
             hosc_gui_push_event(HOSC_GUI_EVENT_KEY_DOWN, (int)wparam, 0, 0, 0);
             return 0;
@@ -307,6 +624,171 @@ static bool hosc_register_window_class(void) {
     g_gui_class_registered = true;
     return true;
 }
+
+static bool hosc_gdiplus_init(void) {
+    GdiplusStartupInput startup_input;
+    GpStatus status;
+
+    if (g_gdiplus_started) {
+        return true;
+    }
+
+    memset(&startup_input, 0, sizeof(startup_input));
+    startup_input.GdiplusVersion = 1;
+    status = GdiplusStartup(&g_gdiplus_token, &startup_input, NULL);
+    if (status != Ok) {
+        g_gdiplus_token = 0;
+        return false;
+    }
+
+    g_gdiplus_started = true;
+    return true;
+}
+
+static void hosc_gdiplus_shutdown(void) {
+    if (g_gdiplus_started) {
+        GdiplusShutdown(g_gdiplus_token);
+        g_gdiplus_token = 0;
+        g_gdiplus_started = false;
+    }
+}
+
+static int hosc_utf8_to_wide(const char* input, WCHAR* output, int output_count) {
+    if (!input || !output || output_count <= 0) {
+        return 0;
+    }
+
+    return MultiByteToWideChar(CP_UTF8, 0, input, -1, output, output_count);
+}
+
+static int hosc_wide_to_utf8(const WCHAR* input, char* output, int output_count) {
+    if (!input || !output || output_count <= 0) {
+        return 0;
+    }
+
+    return WideCharToMultiByte(CP_UTF8, 0, input, -1, output, output_count, NULL, NULL);
+}
+
+static int hosc_is_absolute_path(const char* input) {
+    if (!input || !input[0]) {
+        return 0;
+    }
+
+    if ((isalpha((unsigned char)input[0]) && input[1] == ':') ||
+        (input[0] == '\\' && input[1] == '\\') ||
+        input[0] == '/' ||
+        input[0] == '\\') {
+        return 1;
+    }
+
+    return 0;
+}
+
+void hosc_runtime_set_base_dir(const char* base_dir) {
+    if (!base_dir || !base_dir[0]) {
+        g_runtime_base_dir[0] = '\0';
+        return;
+    }
+
+    strncpy(g_runtime_base_dir, base_dir, sizeof(g_runtime_base_dir) - 1);
+    g_runtime_base_dir[sizeof(g_runtime_base_dir) - 1] = '\0';
+}
+
+static void hosc_normalize_windows_path(const char* input, char* output, size_t output_cap) {
+    char candidate[2048];
+    WCHAR wide_candidate[2048];
+    WCHAR wide_full_path[2048];
+    DWORD length;
+    size_t i;
+
+    if (!input || !output || output_cap == 0) {
+        return;
+    }
+
+    output[0] = '\0';
+
+    if (!hosc_is_absolute_path(input) && g_runtime_base_dir[0]) {
+        snprintf(candidate, sizeof(candidate), "%s\\%s", g_runtime_base_dir, input);
+    } else {
+        strncpy(candidate, input, sizeof(candidate) - 1);
+        candidate[sizeof(candidate) - 1] = '\0';
+    }
+
+    if (!hosc_utf8_to_wide(candidate, wide_candidate, (int)(sizeof(wide_candidate) / sizeof(wide_candidate[0])))) {
+        strncpy(output, candidate, output_cap - 1);
+        output[output_cap - 1] = '\0';
+        return;
+    }
+
+    length = GetFullPathNameW(wide_candidate, (DWORD)(sizeof(wide_full_path) / sizeof(wide_full_path[0])), wide_full_path, NULL);
+    if (length > 0 && length < (DWORD)(sizeof(wide_full_path) / sizeof(wide_full_path[0])) &&
+        hosc_wide_to_utf8(wide_full_path, output, (int)output_cap)) {
+        output[output_cap - 1] = '\0';
+    } else {
+        strncpy(output, candidate, output_cap - 1);
+        output[output_cap - 1] = '\0';
+    }
+
+    for (i = 0; output[i] != '\0'; i++) {
+        if (output[i] == '/') {
+            output[i] = '\\';
+        }
+    }
+}
+
+static void hosc_audio_stop_internal(void) {
+    if (g_audio_player) {
+        g_audio_player->lpVtbl->Stop(g_audio_player);
+        g_audio_player->lpVtbl->Shutdown(g_audio_player);
+        g_audio_player->lpVtbl->Release(g_audio_player);
+        g_audio_player = NULL;
+    }
+    g_audio_internal_playback = false;
+    g_audio_ready = false;
+}
+
+static bool hosc_media_foundation_init(void) {
+    HRESULT hr;
+
+    if (g_media_foundation_started) {
+        return true;
+    }
+
+    hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+    if (SUCCEEDED(hr) || hr == RPC_E_CHANGED_MODE) {
+        if (SUCCEEDED(hr)) {
+            g_com_initialized = true;
+        }
+    } else {
+        return false;
+    }
+
+    hr = MFStartup(MF_VERSION, MFSTARTUP_FULL);
+    if (FAILED(hr)) {
+        if (g_com_initialized) {
+            CoUninitialize();
+            g_com_initialized = false;
+        }
+        return false;
+    }
+
+    g_media_foundation_started = true;
+    return true;
+}
+
+static void hosc_media_foundation_shutdown(void) {
+    hosc_audio_stop_internal();
+
+    if (g_media_foundation_started) {
+        MFShutdown();
+        g_media_foundation_started = false;
+    }
+
+    if (g_com_initialized) {
+        CoUninitialize();
+        g_com_initialized = false;
+    }
+}
 #endif
 
 bool hosc_gui_init(void) {
@@ -334,6 +816,12 @@ void hosc_gui_shutdown(void) {
         DestroyWindow(g_gui_window);
         g_gui_window = NULL;
     }
+    hosc_release_backbuffer();
+    hosc_media_foundation_shutdown();
+    hosc_gdiplus_shutdown();
+    hosc_destroy_window_icon();
+    g_gui_min_width = 0;
+    g_gui_min_height = 0;
 #endif
 
     hosc_gui_clear_event_queue();
@@ -357,30 +845,104 @@ const char* hosc_gui_backend_name(void) {
 }
 
 bool hosc_gui_create_window(const char* title, int width, int height) {
+    HOSCGUIWindowOptions options;
+
+    memset(&options, 0, sizeof(options));
+    options.title = title;
+    options.width = width;
+    options.height = height;
+    options.resizable = true;
+
+    return hosc_gui_create_window_ex(&options);
+}
+
+bool hosc_gui_create_window_ex(const HOSCGUIWindowOptions* options) {
+    const char* title = "HOSC Window";
+    const char* icon = NULL;
+    int width = 800;
+    int height = 600;
+    int min_width = 0;
+    int min_height = 0;
+    bool resizable = true;
+    bool fullscreen = false;
+    bool center = false;
+
     if (!g_gui_initialized) {
         hosc_gui_init();
     }
 
-    if (!title) {
-        title = "HOSC Window";
+    if (options) {
+        if (options->title) {
+            title = options->title;
+        }
+        if (options->width > 0) {
+            width = options->width;
+        }
+        if (options->height > 0) {
+            height = options->height;
+        }
+        if (options->min_width > 0) {
+            min_width = options->min_width;
+        }
+        if (options->min_height > 0) {
+            min_height = options->min_height;
+        }
+        if (options->icon) {
+            icon = options->icon;
+        }
+        resizable = options->resizable;
+        fullscreen = options->fullscreen;
+        center = options->center;
     }
 
 #ifdef _WIN32
     if (g_gui_backend == HOSC_GUI_BACKEND_WIN32) {
+        DWORD style = WS_OVERLAPPEDWINDOW;
+        int x = CW_USEDEFAULT;
+        int y = CW_USEDEFAULT;
+        int show_cmd = SW_SHOW;
+
+        if (fullscreen) {
+            style = WS_POPUP | WS_VISIBLE;
+            width = GetSystemMetrics(SM_CXSCREEN);
+            height = GetSystemMetrics(SM_CYSCREEN);
+            x = 0;
+            y = 0;
+            show_cmd = SW_MAXIMIZE;
+        } else if (!resizable) {
+            style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
+        }
+
         if (g_gui_window) {
             DestroyWindow(g_gui_window);
             g_gui_window = NULL;
+        }
+
+        g_gui_min_width = min_width;
+        g_gui_min_height = min_height;
+
+        if (center && !fullscreen) {
+            int screen_width = GetSystemMetrics(SM_CXSCREEN);
+            int screen_height = GetSystemMetrics(SM_CYSCREEN);
+            x = (screen_width - width) / 2;
+            y = (screen_height - height) / 2;
+            if (x < 0) {
+                x = 0;
+            }
+            if (y < 0) {
+                y = 0;
+            }
         }
 
         g_gui_window = CreateWindowExA(
             0,
             HOSC_WINDOW_CLASS_NAME,
             title,
-            WS_OVERLAPPEDWINDOW,
-            CW_USEDEFAULT,
-            CW_USEDEFAULT,
-            (width > 0 ? width : 800),
-            (height > 0 ? height : 600),
+            style,
+            x,
+            y,
+            width,
+            height,
             NULL,
             NULL,
             GetModuleHandleA(NULL),
@@ -388,19 +950,30 @@ bool hosc_gui_create_window(const char* title, int width, int height) {
         );
 
         if (g_gui_window) {
-            ShowWindow(g_gui_window, SW_SHOW);
+            hosc_apply_window_icon(g_gui_window, icon);
+            hosc_ensure_backbuffer(width, height);
+            ShowWindow(g_gui_window, show_cmd);
             UpdateWindow(g_gui_window);
             g_gui_running = true;
             hosc_gui_clear_event_queue();
             return true;
         }
 
+        hosc_destroy_window_icon();
         g_gui_backend = HOSC_GUI_BACKEND_CONSOLE;
     }
 #endif
 
-    printf("[GUI:console] create_window title=\"%s\" size=%dx%d\n", title,
-           (width > 0 ? width : 800), (height > 0 ? height : 600));
+    printf("[GUI:console] create_window title=\"%s\" size=%dx%d resizable=%s fullscreen=%s center=%s min=%dx%d icon=\"%s\"\n",
+           title,
+           width,
+           height,
+           (resizable ? "true" : "false"),
+           (fullscreen ? "true" : "false"),
+           (center ? "true" : "false"),
+           min_width,
+           min_height,
+           (icon ? icon : ""));
     g_gui_running = true;
     hosc_gui_clear_event_queue();
     return true;
@@ -413,10 +986,10 @@ void hosc_gui_draw_text(int x, int y, const char* text) {
 
 #ifdef _WIN32
     if (g_gui_backend == HOSC_GUI_BACKEND_WIN32 && g_gui_window) {
-        HDC dc = GetDC(g_gui_window);
+        HDC dc = hosc_gui_begin_draw();
         if (dc) {
             TextOutA(dc, x, y, text, (int)strlen(text));
-            ReleaseDC(g_gui_window, dc);
+            hosc_gui_present();
         }
         hosc_gui_pump_events();
         return;
@@ -424,6 +997,389 @@ void hosc_gui_draw_text(int x, int y, const char* text) {
 #endif
 
     printf("[GUI:console] text x=%d y=%d msg=\"%s\"\n", x, y, text);
+}
+
+void hosc_gui_draw_text_styled(int x, int y, const char* text, int size, int r, int g, int b, bool bold) {
+    if (!text) {
+        text = "";
+    }
+    if (size <= 0) {
+        size = 16;
+    }
+
+#ifdef _WIN32
+    if (g_gui_backend == HOSC_GUI_BACKEND_WIN32 && g_gui_window) {
+        HDC dc = hosc_gui_begin_draw();
+        if (dc) {
+            HFONT font;
+            HGDIOBJ old_font;
+            COLORREF old_color;
+            int old_mode;
+
+            font = CreateFontA(-size, 0, 0, 0,
+                               (bold ? FW_BOLD : FW_NORMAL),
+                               FALSE, FALSE, FALSE,
+                               DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                               CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                               DEFAULT_PITCH | FF_DONTCARE,
+                               "Segoe UI");
+            old_font = SelectObject(dc, font);
+            old_color = SetTextColor(dc, RGB(r, g, b));
+            old_mode = SetBkMode(dc, TRANSPARENT);
+            TextOutA(dc, x, y, text, (int)strlen(text));
+            SetBkMode(dc, old_mode);
+            SetTextColor(dc, old_color);
+            SelectObject(dc, old_font);
+            DeleteObject(font);
+            hosc_gui_present();
+        }
+        hosc_gui_pump_events();
+        return;
+    }
+#endif
+
+    printf("[GUI:console] text x=%d y=%d size=%d rgb=(%d,%d,%d) bold=%s msg=\"%s\"\n",
+           x, y, size, r, g, b, (bold ? "true" : "false"), text);
+}
+
+void hosc_gui_draw_rect(int x, int y, int width, int height, int r, int g, int b, bool filled) {
+#ifdef _WIN32
+    if (g_gui_backend == HOSC_GUI_BACKEND_WIN32 && g_gui_window) {
+        HDC dc = hosc_gui_begin_draw();
+        if (dc) {
+            RECT rect;
+            HBRUSH brush;
+            HPEN pen;
+            HGDIOBJ old_brush;
+            HGDIOBJ old_pen;
+
+            rect.left = x;
+            rect.top = y;
+            rect.right = x + width;
+            rect.bottom = y + height;
+
+            brush = CreateSolidBrush(RGB(r, g, b));
+            pen = CreatePen(PS_SOLID, 1, RGB(r, g, b));
+            old_brush = SelectObject(dc, (filled ? brush : GetStockObject(NULL_BRUSH)));
+            old_pen = SelectObject(dc, pen);
+            Rectangle(dc, rect.left, rect.top, rect.right, rect.bottom);
+            SelectObject(dc, old_brush);
+            SelectObject(dc, old_pen);
+            DeleteObject(brush);
+            DeleteObject(pen);
+            hosc_gui_present();
+        }
+        hosc_gui_pump_events();
+        return;
+    }
+#endif
+
+    printf("[GUI:console] rect x=%d y=%d size=%dx%d rgb=(%d,%d,%d) filled=%s\n",
+           x, y, width, height, r, g, b, (filled ? "true" : "false"));
+}
+
+void hosc_gui_draw_round_rect(int x, int y, int width, int height, int radius,
+                              int fill_r, int fill_g, int fill_b,
+                              int border_r, int border_g, int border_b,
+                              int border_width) {
+#ifdef _WIN32
+    if (g_gui_backend == HOSC_GUI_BACKEND_WIN32 && g_gui_window) {
+        HDC dc = hosc_gui_begin_draw();
+        if (dc) {
+            HBRUSH brush;
+            HPEN pen;
+            HGDIOBJ old_brush;
+            HGDIOBJ old_pen;
+            int ellipse_width = radius * 2;
+            int ellipse_height = radius * 2;
+
+            if (ellipse_width <= 0) {
+                ellipse_width = 2;
+            }
+            if (ellipse_height <= 0) {
+                ellipse_height = 2;
+            }
+
+            brush = CreateSolidBrush(RGB(fill_r, fill_g, fill_b));
+            if (border_width > 0) {
+                pen = CreatePen(PS_SOLID, border_width, RGB(border_r, border_g, border_b));
+            } else {
+                pen = (HPEN)GetStockObject(NULL_PEN);
+            }
+
+            old_brush = SelectObject(dc, brush);
+            old_pen = SelectObject(dc, pen);
+            RoundRect(dc, x, y, x + width, y + height, ellipse_width, ellipse_height);
+            SelectObject(dc, old_brush);
+            SelectObject(dc, old_pen);
+            DeleteObject(brush);
+            if (border_width > 0) {
+                DeleteObject(pen);
+            }
+            hosc_gui_present();
+        }
+        hosc_gui_pump_events();
+        return;
+    }
+#endif
+
+    printf("[GUI:console] round_rect x=%d y=%d size=%dx%d radius=%d fill=(%d,%d,%d) border=(%d,%d,%d) border_width=%d\n",
+           x, y, width, height, radius,
+           fill_r, fill_g, fill_b,
+           border_r, border_g, border_b, border_width);
+}
+
+void hosc_gui_draw_image(int x, int y, int width, int height, const char* image_path) {
+    if (!image_path) {
+        image_path = "";
+    }
+
+#ifdef _WIN32
+    if (g_gui_backend == HOSC_GUI_BACKEND_WIN32 && g_gui_window && image_path[0]) {
+        char normalized_path[1024];
+        WCHAR wide_path[1024];
+        GpImage* image = NULL;
+        GpGraphics* graphics = NULL;
+        HDC dc = NULL;
+        GpStatus status;
+
+        if (width <= 0 || height <= 0) {
+            printf("[GUI:win32] image skipped: width/height must be > 0\n");
+            return;
+        }
+
+        if (!hosc_gdiplus_init()) {
+            printf("[GUI:win32] image skipped: failed to initialize GDI+\n");
+            return;
+        }
+
+        hosc_normalize_windows_path(image_path, normalized_path, sizeof(normalized_path));
+        if (!hosc_utf8_to_wide(normalized_path, wide_path, (int)(sizeof(wide_path) / sizeof(wide_path[0])))) {
+            printf("[GUI:win32] image skipped: invalid UTF-8 path \"%s\"\n", normalized_path);
+            return;
+        }
+
+        status = GdipLoadImageFromFile(wide_path, &image);
+        if (status != Ok || !image) {
+            printf("[GUI:win32] image skipped: cannot load \"%s\"\n", normalized_path);
+            return;
+        }
+
+        dc = hosc_gui_begin_draw();
+        if (!dc) {
+            GdipDisposeImage(image);
+            return;
+        }
+
+        status = GdipCreateFromHDC(dc, &graphics);
+        if (status == Ok && graphics) {
+            status = GdipDrawImageRectI(graphics, image, x, y, width, height);
+            if (status != Ok) {
+                printf("[GUI:win32] image draw failed for \"%s\"\n", normalized_path);
+            }
+            GdipDeleteGraphics(graphics);
+        }
+
+        hosc_gui_present();
+        GdipDisposeImage(image);
+        hosc_gui_pump_events();
+        return;
+    }
+#endif
+
+    printf("[GUI:console] image x=%d y=%d size=%dx%d path=\"%s\"\n", x, y, width, height, image_path);
+}
+
+bool hosc_audio_play_file(const char* audio_path, bool async_play) {
+    if (!audio_path || !audio_path[0]) {
+        return false;
+    }
+
+#ifdef _WIN32
+    {
+        char normalized_path[1024];
+        WCHAR wide_path[1024];
+        HRESULT hr;
+
+        hosc_audio_stop_internal();
+        hosc_normalize_windows_path(audio_path, normalized_path, sizeof(normalized_path));
+        if (!hosc_utf8_to_wide(normalized_path, wide_path, (int)(sizeof(wide_path) / sizeof(wide_path[0])))) {
+            fprintf(stderr, "[audio] invalid UTF-8 path: %s\n", audio_path);
+            return false;
+        }
+
+        if (!hosc_media_foundation_init()) {
+            fprintf(stderr, "[audio] failed to initialize Media Foundation\n");
+            return false;
+        }
+
+        hr = MFPCreateMediaPlayer(wide_path,
+                                  async_play ? TRUE : FALSE,
+                                  MFP_OPTION_FREE_THREADED_CALLBACK,
+                                  &g_hosc_media_callback.iface,
+                                  NULL,
+                                  &g_audio_player);
+        if (FAILED(hr) || !g_audio_player) {
+            fprintf(stderr, "[audio] MFPlay open failed for \"%s\" (hr=0x%08lx)\n",
+                    normalized_path, (unsigned long)hr);
+            return false;
+        }
+
+        g_audio_internal_playback = true;
+        g_audio_ready = true;
+        strncpy(g_last_audio_path, normalized_path, sizeof(g_last_audio_path) - 1);
+        g_last_audio_path[sizeof(g_last_audio_path) - 1] = '\0';
+        if (!async_play) {
+            g_audio_player->lpVtbl->Play(g_audio_player);
+        }
+        return true;
+    }
+#else
+    printf("[audio unavailable] %s\n", audio_path);
+    (void)async_play;
+    return false;
+#endif
+}
+
+void hosc_audio_stop(void) {
+#ifdef _WIN32
+    hosc_audio_stop_internal();
+#endif
+}
+
+bool hosc_gui_pick_audio_file(char* out_path, size_t out_cap) {
+#ifdef _WIN32
+    OPENFILENAMEW dialog;
+    WCHAR file_buffer[MAX_PATH];
+
+    if (!out_path || out_cap == 0) {
+        return false;
+    }
+
+    memset(file_buffer, 0, sizeof(file_buffer));
+    memset(&dialog, 0, sizeof(dialog));
+    dialog.lStructSize = sizeof(dialog);
+    dialog.hwndOwner = g_gui_window;
+    dialog.lpstrFile = file_buffer;
+    dialog.nMaxFile = (DWORD)sizeof(file_buffer);
+    dialog.lpstrFilter = L"Audio Files\0*.mp3;*.wav;*.ogg;*.flac;*.m4a\0All Files\0*.*\0";
+    dialog.nFilterIndex = 1;
+    dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY;
+    dialog.lpstrTitle = L"Select audio file";
+
+    if (!GetOpenFileNameW(&dialog)) {
+        return false;
+    }
+
+    return hosc_wide_to_utf8(file_buffer, out_path, (int)out_cap);
+#else
+    (void)out_path;
+    (void)out_cap;
+    return false;
+#endif
+}
+
+bool hosc_audio_has_internal_playback(void) {
+#ifdef _WIN32
+    return (g_audio_internal_playback && g_audio_player != NULL);
+#else
+    return false;
+#endif
+}
+
+int hosc_audio_get_position_ms(void) {
+#ifdef _WIN32
+    PROPVARIANT value;
+
+    if (!hosc_audio_has_internal_playback()) {
+        return -1;
+    }
+
+    PropVariantInit(&value);
+    if (FAILED(g_audio_player->lpVtbl->GetPosition(g_audio_player, &MFP_POSITIONTYPE_100NS, &value))) {
+        return -1;
+    }
+
+    if (value.vt != VT_I8 && value.vt != VT_UI8) {
+        PropVariantClear(&value);
+        return -1;
+    }
+
+    {
+        LONGLONG raw_value = (value.vt == VT_I8 ? value.hVal.QuadPart : (LONGLONG)value.uhVal.QuadPart);
+        int ms = (int)(raw_value / 10000LL);
+        PropVariantClear(&value);
+        return ms;
+    }
+#else
+    return -1;
+#endif
+}
+
+int hosc_audio_get_duration_ms(void) {
+#ifdef _WIN32
+    PROPVARIANT value;
+
+    if (!hosc_audio_has_internal_playback()) {
+        return -1;
+    }
+
+    PropVariantInit(&value);
+    if (FAILED(g_audio_player->lpVtbl->GetDuration(g_audio_player, &MFP_POSITIONTYPE_100NS, &value))) {
+        return -1;
+    }
+
+    if (value.vt != VT_I8 && value.vt != VT_UI8) {
+        PropVariantClear(&value);
+        return -1;
+    }
+
+    {
+        LONGLONG raw_value = (value.vt == VT_I8 ? value.hVal.QuadPart : (LONGLONG)value.uhVal.QuadPart);
+        int ms = (int)(raw_value / 10000LL);
+        PropVariantClear(&value);
+        return ms;
+    }
+#else
+    return -1;
+#endif
+}
+
+bool hosc_audio_seek_ms(int position_ms) {
+#ifdef _WIN32
+    PROPVARIANT value;
+    int duration_ms;
+
+    if (!hosc_audio_has_internal_playback()) {
+        return false;
+    }
+
+    duration_ms = hosc_audio_get_duration_ms();
+    if (duration_ms > 0) {
+        if (position_ms < 0) {
+            position_ms = 0;
+        }
+        if (position_ms > duration_ms) {
+            position_ms = duration_ms;
+        }
+    }
+
+    PropVariantInit(&value);
+    value.vt = VT_I8;
+    value.hVal.QuadPart = (LONGLONG)position_ms * 10000LL;
+    if (FAILED(g_audio_player->lpVtbl->SetPosition(g_audio_player, &MFP_POSITIONTYPE_100NS, &value))) {
+        return false;
+    }
+
+    if (FAILED(g_audio_player->lpVtbl->Play(g_audio_player))) {
+        return false;
+    }
+
+    return true;
+#else
+    (void)position_ms;
+    return false;
+#endif
 }
 
 void hosc_gui_pump_events(void) {
@@ -1083,6 +2039,7 @@ void hosc_log(HOSCLogLevel level, const char* message, ...) {
 
     logger_log(level, buffer);
 }
+
 
 
 

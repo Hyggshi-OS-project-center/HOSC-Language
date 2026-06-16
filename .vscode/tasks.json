@@ -74,6 +74,20 @@
             }
         },
         {
+            "label": "Run VSCode Mini (Python GUI)",
+            "type": "shell",
+            "command": "${workspaceFolder}\\tools\\vscode_mini.bat",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new"
+            }
+        },
+        {
             "label": "Clean",
             "type": "shell",
             "command": "make",

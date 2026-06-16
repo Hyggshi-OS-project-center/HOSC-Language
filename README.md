@@ -1,117 +1,187 @@
 # HOSC Language
 
-Project structure:
+[![HOSC Language CI](https://github.com/Hyggshi-OS-project-center/HOSC-Language/actions/workflows/nextgen-ci.yml/badge.svg)](https://github.com/Hyggshi-OS-project-center/HOSC-Language/actions/workflows/nextgen-ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Language: C11](https://img.shields.io/badge/language-C11-555.svg)](CMakeLists.txt)
+[![Platform: Windows](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](docs/setup.md)
 
-- compiler/: HOSC compiler (lexer/parser/AST/codegen + compiler frontend)
-- runtime/: VM/runtime (HVM + bytecode runner/compiler backend)
-- framework/: GUI/system framework layer
-- examples/: HOSC demo scripts
-- docs/: documentation
-- tools/: build scripts, tests, and legacy/debug helpers
+HOSC is a bootstrap-stage programming language toolchain written in C. The
+repository currently contains a compiler frontend, HVM bytecode virtual machine,
+runtime host, command-line tool, Win32-oriented GUI framework experiments, an
+LSP server, and a VS Code extension.
 
-## Quick Build (Windows + MinGW gcc)
+The implementation is in active transition. This README documents the behavior
+that is visible in the current source tree, CMake files, PowerShell build
+scripts, and checked-in examples.
 
-```powershell
-cd tools
-.\build.ps1
-```
+## Features
 
-Outputs:
+| Area | Current status |
+| --- | --- |
+| Compiler | Parses HOSC source through the C frontend and emits `.hbc` bytecode. |
+| Imports | Resolves quoted imports and dotted module imports relative to the source file. |
+| HVM | Runs bytecode with call frames, stack values, constants, globals, native calls, and mark-sweep GC scaffolding. |
+| Runtime | Provides `hosc_runtime_run_file`, `hosc_runtime_run_bytecode`, and embedding helpers. |
+| CLI | Supports `run`, `build`, `check`, `fmt`, `test`, and `version` commands. |
+| Framework | Separate GUI/event runtime for window, text, image, audio, message box, and event-loop demos. |
+| Editor tooling | TypeScript LSP server plus VS Code language extension for `.hosc` files. |
+| CI | Windows GitHub Actions workflow builds with MinGW and smoke-tests the CLI. |
 
-- `tools/bin/hosc-compiler.exe`
-- `tools/bin/hvm.exe`
-- `tools/bin/hosc.exe`
+Known limits:
 
-## Quick Run (Unified CLI)
+- `hosc fmt` currently returns `formatter not implemented in bootstrap build`.
+- `hosc test` currently delegates users to CTest.
+- The framework runtime is separate from the main `hosc -> compiler -> HVM` path.
+- Older language reference files under `docs/` may describe features that are
+  not fully implemented in the bootstrap compiler yet.
 
-```powershell
-# show CLI version
-.\tools\bin\hosc.exe --version
-# or
-.\tools\bin\hosc.exe version
+## Screenshots
 
-# syntax/type check (compile-only validation)
-.\tools\bin\hosc.exe check framework\examples\smoke.hosc
+No canonical screenshots are checked in yet. Framework GUI demos live under
+`framework/examples/` and can be used to capture release screenshots once the
+framework binary has been built.
 
-# format source in-place
-.\tools\bin\hosc.exe fmt framework\examples\smoke.hosc
+## Installation
 
-# verify formatting only (exit 1 if needs format)
-.\tools\bin\hosc.exe fmt framework\examples\smoke.hosc --check
+### Prerequisites
 
-# build bundled executable (.exe)
-.\tools\bin\hosc.exe build framework\examples\smoke.hosc
+- Windows 10/11
+- PowerShell 5.1 or newer
+- MinGW GCC and `ar` available on `PATH`
+- CMake 3.20+ for the CMake build path
+- Node.js 20+ for `lsp/` and `vscode-extension/`
 
-# build + run on VM
-.\tools\bin\hosc.exe run framework\examples\smoke.hosc
-```
-
-Optional flags:
-
-- `build` default output: `<input>.exe` (bundled runtime + bytecode)
-- `build -o <file.hbc>`: emit raw bytecode instead of `.exe`
-- `run -o <file.hbc>`: custom bytecode output path for run pipeline
-- `--keep`: keep temp `.hbc` when using `run` without `-o`
-- `fmt -o <file.hosc>`: write formatted output to another file
-
-## Manual Pipeline
-
-```powershell
-.\tools\bin\hosc-compiler.exe framework\examples\smoke.hosc -b smoke.hbc
-.\tools\bin\hvm.exe smoke.hbc
-```
-
-## Stability Gate
-
-Run full P0 smoke gate (build + check/build/run + lexer fail-fast + fmt validation):
-
-```powershell
-.\tools\quality_gate.ps1
-```
-
-Framework maturity checklist:
-
-- `docs/FRAMEWORK_MATURITY.md`
-
-## VSCode Mini (Python GUI)
-
-Requirements:
-
-- Python 3 + PyQt5 (`pip install PyQt5`)
-- `tools/bin/hosc-compiler.exe` and `tools/bin/hvm.exe` already built
-
-Run:
+### Bootstrap build
 
 ```powershell
 .\tools\build.ps1
-python .\tools\vscode_mini.py
-# or
-.\tools\vscode_mini.bat
 ```
 
-Main features:
+The script compiles the compiler, VM, runtime, and CLI with GCC. Outputs are
+created under `build/bootstrap/` and synchronized into `tools/bin/`:
 
-- Qt5 dark UI (explorer + editor tabs + output panel)
-- File menu (New/Open/Save/Save As)
-- File explorer double-click to open .hosc
-- Autocomplete (Ctrl+Space + inline suggestions while typing)
-- Error underline (red wave) after failed build / live lint
-- Build/Run integration to HOSC compiler + HVM
-- Build/Run logs in output panel
-- Open a file directly: `python .\tools\vscode_mini.py framework\examples\smoke.hosc`
+- `tools/bin/hosc.exe`
+- `tools/bin/hvm.exe`
+- `tools/bin/hvm_host.exe`
 
-Current real GUI features:
+### CMake build
 
-- Win32 dropdown menu (`File > New/Open/Save/Exit`)
-- Vertical scrollbar with mouse wheel + scroll bar drag
-- Real open/save file dialogs
-- Runtime file APIs from HOSC (`open_file_dialog`, `save_file_dialog`, `file_read`, `file_read_line`, `file_write`)
-- Runtime shell command API from HOSC (`exec`) for Build/Run inside editor
-- Multiline editor widget APIs (`textarea`, `textarea_set`, `code_editor`)
+```powershell
+cmake -S . -B build/cmake -G Ninja
+cmake --build build/cmake
+ctest --test-dir build/cmake --output-on-failure
+```
 
-Menu event IDs exposed to script:
+Use another CMake generator if Ninja is not installed.
 
-- `1001` = New
-- `1002` = Open
-- `1003` = Save
-- `1004` = Exit
+## Usage
+
+Run the current CLI:
+
+```powershell
+.\tools\bin\hosc.exe version
+.\tools\bin\hosc.exe check .\framework\examples\Hello.hosc
+.\tools\bin\hosc.exe build .\framework\examples\Hello.hosc
+.\tools\bin\hosc.exe run .\framework\examples\Hello.hosc
+.\tools\bin\hosc.exe run .\framework\examples\Hello.hosc --keep
+```
+
+Minimal HOSC source:
+
+```hosc
+package main
+
+func main() {
+    print("Hello World!")
+}
+```
+
+Run a framework GUI example:
+
+```powershell
+.\framework\build.ps1
+.\framework\bin\hosc_framework.exe run .\framework\examples\hello_world_window.hosc
+```
+
+## Development Setup
+
+1. Clone the repository.
+2. Install MinGW GCC, PowerShell, CMake, and Node.js.
+3. Build native tooling with `.\tools\build.ps1`.
+4. Optionally build the framework with `.\framework\build.ps1`.
+5. Build editor tooling:
+
+```powershell
+Push-Location lsp
+npm install
+npm run build
+Pop-Location
+
+Push-Location vscode-extension
+npm install
+npm run build
+Pop-Location
+```
+
+More setup notes are available in [docs/setup.md](docs/setup.md).
+
+## Folder Structure
+
+```text
+.
+|-- cli/                 HOSC command-line executable sources
+|-- compiler/            Compiler API, diagnostics, lexer, parser, AST, IR, codegen
+|-- docs/                Project, language, architecture, and maintenance docs
+|-- framework/           Standalone Win32-oriented GUI/event framework runtime
+|-- import_test/         Local import and media test assets
+|-- lsp/                 TypeScript Language Server Protocol implementation
+|-- runtime/             Runtime host, bytecode runner, embedding API, platform code
+|-- tests/               CTest targets and native regression tests
+|-- tools/               Bootstrap build scripts, quality gate, helper tools
+|-- vm/                  HVM bytecode loader, interpreter, object model, GC, natives
+`-- vscode-extension/    VS Code extension and TextMate grammar
+```
+
+## Build Instructions
+
+See [docs/build.md](docs/build.md) for native, framework, CI, and editor build
+commands.
+
+## Deployment
+
+For an internal Windows release, package the generated binaries from:
+
+- `tools/bin/hosc.exe`
+- `tools/bin/hvm.exe`
+- `tools/bin/hvm_host.exe`
+- `framework/bin/hosc_framework.exe` if GUI demos are part of the release
+- `vscode-extension/` after `npm run build` if editor support is included
+
+Do not ship generated build directories, local `.hbc` files, or media test
+assets unless they are intentionally part of the release.
+
+## FAQ
+
+**Is HOSC production-ready?**  
+No. The repository is a bootstrap toolchain and language/runtime experiment.
+
+**Why are there older docs that describe more syntax than the compiler accepts?**  
+The language design docs are ahead of the bootstrap compiler. Trust source,
+`docs/SOURCE_DERIVED_SNAPSHOT.md`, and the docs added in this pass first.
+
+**Can the framework examples be run through `hosc.exe`?**  
+No. GUI framework scripts should be run with `framework/bin/hosc_framework.exe`.
+The compiler detects framework markers and reports that boundary.
+
+**Does `hosc build` support `-o`?**  
+No. In the current CLI source, `build` writes bytecode next to the source file.
+Only `run` accepts `-o out.hbc` and `--keep`.
+
+## Credits
+
+- Project lead: Hyggshi OS Developer
+- Toolchain, framework, LSP, and extension contributors: see repository history
+
+## License
+
+This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE).

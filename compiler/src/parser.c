@@ -46,6 +46,7 @@ static int token_starts_statement(TokenType t) {
            t == TOKEN_LET ||
            t == TOKEN_VAR ||
            t == TOKEN_PRINT ||
+           t == TOKEN_PRINTS ||
            t == TOKEN_IF ||
            t == TOKEN_WHILE ||
            t == TOKEN_FOR ||
@@ -145,6 +146,64 @@ static char *parse_identifier_path(Parser *p) {
     return final_name;
 }
 
+static ASTNode *make_string_expr(Parser *p, const char *value) {
+    ASTNode *n = create_ast_node(AST_STRING);
+    if (!n) return NULL;
+    n->data.string_lit.value = dup_str(p, value ? value : "");
+    return n;
+}
+
+static ASTNodeList *parse_audio_play_config_args(Parser *p) {
+    ASTNodeList *args = NULL;
+    ASTNode *src_expr = NULL;
+
+    if (!match(p, TOKEN_LBRACE)) return NULL;
+
+    while (!check(p, TOKEN_RBRACE) && !is_at_end(p)) {
+        Token *property;
+        int is_src;
+
+        if (!check(p, TOKEN_IDENTIFIER)) {
+            free_ast(src_expr);
+            return NULL;
+        }
+
+        property = advance_tok(p);
+        is_src = (strcmp(property->value.identifier, "src") == 0);
+
+        if (!match(p, TOKEN_COLON)) {
+            free_ast(src_expr);
+            return NULL;
+        }
+
+        if (is_src) {
+            if (!check(p, TOKEN_STRING)) {
+                free_ast(src_expr);
+                return NULL;
+            }
+            free_ast(src_expr);
+            src_expr = make_string_expr(p, current_token(p)->value.string_lit);
+            advance_tok(p);
+            if (!src_expr) return NULL;
+        } else if (check(p, TOKEN_STRING) || check(p, TOKEN_NUMBER) || check(p, TOKEN_FLOAT) ||
+                   check(p, TOKEN_BOOL_TRUE) || check(p, TOKEN_BOOL_FALSE)) {
+            advance_tok(p);
+        } else {
+            free_ast(src_expr);
+            return NULL;
+        }
+
+        if (!match(p, TOKEN_COMMA)) break;
+    }
+
+    if (!match(p, TOKEN_RBRACE) || !src_expr) {
+        free_ast(src_expr);
+        return NULL;
+    }
+
+    return ast_list_append(args, src_expr);
+}
+
 static ASTNode *parse_primary(Parser *p) {
     if (match(p, TOKEN_NUMBER)) {
         ASTNode *n = create_ast_node(AST_NUMBER);
@@ -182,7 +241,10 @@ static ASTNode *parse_primary(Parser *p) {
 
         if (match(p, TOKEN_LPAREN)) {
             ASTNodeList *args = NULL;
-            if (!check(p, TOKEN_RPAREN)) {
+            if (strcmp(path, "audio.play") == 0 && check(p, TOKEN_LBRACE)) {
+                args = parse_audio_play_config_args(p);
+                if (!args) return NULL;
+            } else if (!check(p, TOKEN_RPAREN)) {
                 while (1) {
                     ASTNode *arg = parse_expression(p);
                     if (!arg) return NULL;
@@ -509,6 +571,31 @@ static ASTNode *parse_print(Parser *p) {
     return node;
 }
 
+static ASTNode *parse_prints(Parser *p) {
+    Token *text;
+    ASTNode *expr;
+    ASTNode *node;
+
+    if (!match(p, TOKEN_LBRACKET)) return NULL;
+    if (!check(p, TOKEN_STRING)) return NULL;
+    text = advance_tok(p);
+    if (!match(p, TOKEN_RBRACKET)) return NULL;
+
+    if (!consume_statement_end(p)) return NULL;
+
+    expr = create_ast_node(AST_STRING);
+    if (!expr) return NULL;
+    expr->data.string_lit.value = dup_str(p, text->value.string_lit);
+
+    node = create_ast_node(AST_PRINT_STATEMENT);
+    if (!node) {
+        free_ast(expr);
+        return NULL;
+    }
+    node->data.print_statement.expression = expr;
+    return node;
+}
+
 static ASTNode *parse_break_or_continue(Parser *p, int is_continue) {
     ASTNode *node = create_ast_node(is_continue ? AST_CONTINUE : AST_BREAK);
     if (!node) return NULL;
@@ -790,6 +877,7 @@ static ASTNode *parse_statement(Parser *p) {
     if (match(p, TOKEN_VAR)) return parse_var_decl_core(p, 1, 1);
 
     if (match(p, TOKEN_PRINT)) return parse_print(p);
+    if (match(p, TOKEN_PRINTS)) return parse_prints(p);
     if (match(p, TOKEN_RETURN)) return parse_return(p);
     if (match(p, TOKEN_BREAK)) return parse_break_or_continue(p, 0);
     if (match(p, TOKEN_CONTINUE)) return parse_break_or_continue(p, 1);
@@ -1045,5 +1133,3 @@ ASTNode* parser_parse(const char* source) {
 
     return result;
 }
-
-

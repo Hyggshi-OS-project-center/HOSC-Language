@@ -6,7 +6,7 @@ INCLUDES = -Iinclude
 
 ifeq ($(OS),Windows_NT)
 EXE = .exe
-GUI_LIBS = -luser32 -lgdi32 -lkernel32
+GUI_LIBS = -luser32 -lgdi32 -lkernel32 -lgdiplus -lole32 -lcomdlg32 -lmfplay -lmfplat -lmf -lmfuuid
 RUNNER = .\\
 MKDIR_BIN = if not exist bin mkdir bin
 RM_FILE = del /Q
@@ -32,10 +32,10 @@ bin:
 	$(MKDIR_BIN)
 
 run: framework
-	$(RUNNER)$(OUT) run examples/window.hosc
+	$(RUNNER)$(OUT) run examples/hello_world_window.hosc
 
 run-smoke: framework
-	$(RUNNER)$(OUT) run examples/smoke.hosc
+	$(RUNNER)$(OUT) run examples/Hello.hosc
 
 clean:
 	$(RM_FILE) $(OUT)

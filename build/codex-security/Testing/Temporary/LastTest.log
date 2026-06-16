@@ -1,0 +1,18 @@
+Start testing: May 15 15:53 SE Asia Standard Time
+----------------------------------------------------------
+1/3 Testing: security_regression
+1/3 Test: security_regression
+Command: "C:/Users/Laptop dell/Downloads/hosc-language/build/codex-security/tests/security_regression.exe"
+Directory: C:/Users/Laptop dell/Downloads/hosc-language/build/codex-security/tests
+"security_regression" start time: May 15 15:53 SE Asia Standard Time
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.04 sec
+----------------------------------------------------------
+Test Passed.
+"security_regression" end time: May 15 15:53 SE Asia Standard Time
+"security_regression" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: May 15 15:53 SE Asia Standard Time

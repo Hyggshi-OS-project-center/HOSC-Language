@@ -1,0 +1,28 @@
+package main
+
+func blue_archive_chat() {
+    
+    print("Arona: こんにちは、教授。まだアルファ版開発段階ではありますが、ご自身でアプリケーションやソフトウェアを開発することができます。")
+    
+    audio.play({
+        src: "import_test/Arona1.mp3" // It plays the sound until the end.
+    })
+
+    print("Shiroko: でも、私はまだここにいる。")
+
+    audio.play({
+        src: "import_test/Shiroko1.mp3"
+    })
+
+    print("Arona: まだ話し終わっていません。")
+
+    audio.play({
+        src: "import_test/Arona2.mp3"
+    })
+
+    print("Shiroko: 手短に話すだけでいいんです。")
+
+    audio.play({
+        src: "import_test/Shiroko2.mp3"
+    })
+}
