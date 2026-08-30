@@ -14,16 +14,22 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "vendor/stb_image.h"
 
-#ifdef __linux__
+#if defined(__linux__) && (defined(HOSC_HAS_X11) || __has_include(<X11/Xlib.h>))
 #define HAS_X11 1
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/Xos.h>
 #include <X11/Xatom.h>
 #include <X11/keysym.h>
+#if defined(HOSC_HAS_XFT) || __has_include(<X11/Xft/Xft.h>)
+#define HAS_XFT 1
 #include <X11/Xft/Xft.h>
 #else
+#define HAS_XFT 0
+#endif
+#else
 #define HAS_X11 0
+#define HAS_XFT 0
 #endif
 
 /* Event type constants matching HOSC_GUI_EVENT_* from hosc_runtime.h */
@@ -408,6 +414,7 @@ static void x11_draw_text(HVM_GuiBackendWindow* w, int x, int y, const char* tex
     if (!text) return;
     if (size <= 0) size = 16;
 
+#if HAS_XFT
     /* Xft renders text at an arbitrary pixel size via scalable fonts
      * (fontconfig). The font is cached per (size, bold). */
     static XftFont* cached_font = NULL;
@@ -448,6 +455,13 @@ static void x11_draw_text(HVM_GuiBackendWindow* w, int x, int y, const char* tex
         XftDrawDestroy(xd);
         XFlush(win->display);
     }
+#else
+    if (win->gc) {
+        XSetForeground(win->display, win->gc, x11_rgb(r, g, b));
+        XDrawString(win->display, win->window, win->gc, x, y + size, text, (int)strlen(text));
+        XFlush(win->display);
+    }
+#endif
 #endif
 }
 
