@@ -24,12 +24,55 @@
 #include <time.h>
 
 #ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef COBJMACROS
+#define COBJMACROS
+#endif
+#ifndef CINTERFACE
+#define CINTERFACE
+#endif
 #include <windows.h>
 #include <commdlg.h>
-#include <gdiplus.h>
 #include <mfapi.h>
 #include <mfplay.h>
 #include <propidl.h>
+
+/* GDI+ C declarations for cross-compiler compatibility (MSVC & GCC) */
+typedef enum {
+    GdiplusStatusOk = 0
+} GpStatus;
+
+typedef struct {
+    UINT32 GdiplusVersion;
+    void* DebugEventCallback;
+    BOOL SuppressBackgroundThread;
+    BOOL SuppressExternalCodecs;
+} GdiplusStartupInput;
+
+typedef void GpImage;
+typedef void GpGraphics;
+
+#define Ok GdiplusStatusOk
+
+#ifndef WINGDIPAPI
+#define WINGDIPAPI __stdcall
+#endif
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+GpStatus WINGDIPAPI GdiplusStartup(ULONG_PTR *token, const GdiplusStartupInput *input, void *output);
+void WINGDIPAPI GdiplusShutdown(ULONG_PTR token);
+GpStatus WINGDIPAPI GdipLoadImageFromFile(const WCHAR* filename, GpImage **image);
+GpStatus WINGDIPAPI GdipCreateFromHDC(HDC hdc, GpGraphics **graphics);
+GpStatus WINGDIPAPI GdipDrawImageRectI(GpGraphics *graphics, GpImage *image, INT x, INT y, INT width, INT height);
+GpStatus WINGDIPAPI GdipDeleteGraphics(GpGraphics *graphics);
+GpStatus WINGDIPAPI GdipDisposeImage(GpImage *image);
+#ifdef __cplusplus
+}
+#endif
 #else
 #include <fcntl.h>
 #include <signal.h>

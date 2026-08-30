@@ -7,7 +7,12 @@
 #include <string.h>
 #include <time.h>
 #include <stdint.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <unistd.h>
+#endif
 
 #include "runtime_gui_backend.h"
 
@@ -46,17 +51,25 @@ static void console_request_repaint(HVM_GuiBackendWindow* window) {
 }
 
 static double console_now_ms(void) {
+#ifdef _WIN32
+    return (double)GetTickCount64();
+#else
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1000000.0;
+#endif
 }
 
 static void console_sleep_ms(int ms) {
     if (ms <= 0) return;
+#ifdef _WIN32
+    Sleep((DWORD)ms);
+#else
     struct timespec req;
     req.tv_sec = ms / 1000;
     req.tv_nsec = (long)(ms % 1000) * 1000000L;
     nanosleep(&req, NULL);
+#endif
 }
 
 static void console_draw_text(HVM_GuiBackendWindow* window, int x, int y, const char* text,
