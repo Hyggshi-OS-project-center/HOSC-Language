@@ -29,6 +29,7 @@ add_subdirectory(vm)
 add_subdirectory(runtime)
 add_subdirectory(cli)
 add_subdirectory(bootstrap)
+add_subdirectory(framework)
 
 if(HOSC_BUILD_TESTS)
   enable_testing()

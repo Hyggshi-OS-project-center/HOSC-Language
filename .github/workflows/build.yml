@@ -34,9 +34,28 @@ jobs:
       - name: Run tests
         run: ctest --test-dir build/hosc -C Release --output-on-failure
 
-      - name: Upload HOSC binaries
+      - name: Stage distribution package
+        shell: bash
+        run: |
+          mkdir -p dist/bin dist/framework/bin
+          if [ -d "build/hosc/bin/Release" ]; then
+            cp -r build/hosc/bin/Release/* dist/bin/
+            cp -r build/hosc/bin/Release/* dist/
+          elif [ -d "build/hosc/bin" ]; then
+            cp -r build/hosc/bin/* dist/bin/
+            cp -r build/hosc/bin/* dist/
+          fi
+          cp -r framework/* dist/framework/
+          if [ -f "dist/bin/hosc_framework" ]; then
+            cp dist/bin/hosc_framework dist/framework/bin/
+          fi
+          if [ -f "dist/bin/hosc_framework.exe" ]; then
+            cp dist/bin/hosc_framework.exe dist/framework/bin/
+          fi
+
+      - name: Upload HOSC package
         uses: actions/upload-artifact@v4
         with:
           name: hosc-${{ matrix.os }}
-          path: build/hosc/bin/
+          path: dist/
           if-no-files-found: error

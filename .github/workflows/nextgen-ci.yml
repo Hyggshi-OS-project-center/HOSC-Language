@@ -30,11 +30,29 @@ jobs:
       - name: Test
         run: ctest --test-dir build/cmake -C Release --output-on-failure
 
+      - name: Stage package
+        shell: bash
+        run: |
+          mkdir -p dist/bin dist/framework/bin
+          if [ -d "build/cmake/bin/Release" ]; then
+            cp -r build/cmake/bin/Release/* dist/bin/
+            cp -r build/cmake/bin/Release/* dist/
+          elif [ -d "build/cmake/bin" ]; then
+            cp -r build/cmake/bin/* dist/bin/
+            cp -r build/cmake/bin/* dist/
+          fi
+          cp -r framework/* dist/framework/
+          if [ -f "dist/bin/hosc_framework" ]; then
+            cp dist/bin/hosc_framework dist/framework/bin/
+          fi
+          if [ -f "dist/bin/hosc_framework.exe" ]; then
+            cp dist/bin/hosc_framework.exe dist/framework/bin/
+          fi
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: hosc-${{ matrix.os }}-binaries
-          path: |
-            build/cmake/bin/
+          path: dist/
           if-no-files-found: error
           retention-days: 7

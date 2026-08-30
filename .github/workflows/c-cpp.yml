@@ -27,9 +27,29 @@ jobs:
         run: cmake --build build/ci --config Release --parallel
       - name: Run CTest
         run: ctest --test-dir build/ci -C Release --output-on-failure
+
+      - name: Stage package
+        shell: bash
+        run: |
+          mkdir -p dist/bin dist/framework/bin
+          if [ -d "build/ci/bin/Release" ]; then
+            cp -r build/ci/bin/Release/* dist/bin/
+            cp -r build/ci/bin/Release/* dist/
+          elif [ -d "build/ci/bin" ]; then
+            cp -r build/ci/bin/* dist/bin/
+            cp -r build/ci/bin/* dist/
+          fi
+          cp -r framework/* dist/framework/
+          if [ -f "dist/bin/hosc_framework" ]; then
+            cp dist/bin/hosc_framework dist/framework/bin/
+          fi
+          if [ -f "dist/bin/hosc_framework.exe" ]; then
+            cp dist/bin/hosc_framework.exe dist/framework/bin/
+          fi
+
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
           name: hosc-${{ matrix.os }}
-          path: build/ci/bin/
+          path: dist/
           if-no-files-found: error
