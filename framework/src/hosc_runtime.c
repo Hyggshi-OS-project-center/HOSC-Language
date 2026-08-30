@@ -903,9 +903,36 @@ static int hosc_audio_probe_duration_ms(const char* path) {
  * Dynamic backend functions (cross-platform dispatch)
  * ========================================================================== */
 
-/* Forward declarations of built-in backends */
+/* Forward declarations / definitions of built-in backends */
 extern HVM_GuiBackend hvm_gui_backend_console;
-extern HVM_GuiBackend hvm_gui_backend_win32;
+#ifdef _WIN32
+static int win32_backend_available(void) { return 1; }
+static int win32_backend_init(void) { return 1; }
+static void win32_backend_shutdown(void) { }
+
+HVM_GuiBackend hvm_gui_backend_win32 = {
+    .name = "win32",
+    .available = win32_backend_available,
+    .init = win32_backend_init,
+    .shutdown = win32_backend_shutdown,
+    .create_window = NULL,
+    .destroy_window = NULL,
+    .pump_events = NULL,
+    .request_repaint = NULL,
+    .now_ms = NULL,
+    .sleep_ms = NULL,
+    .draw_text = NULL,
+    .draw_image = NULL,
+    .draw_rect = NULL,
+    .draw_rect_outline = NULL,
+    .draw_round_rect = NULL,
+    .get_width = NULL,
+    .get_height = NULL,
+    .get_scroll_y = NULL,
+    .set_scroll_range = NULL,
+    .is_running = NULL
+};
+#endif
 extern HVM_GuiBackend hvm_gui_backend_x11;
 
 /* Event callback: pushes events from backend into HOSC event queue */
