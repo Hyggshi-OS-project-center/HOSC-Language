@@ -1,4 +1,7 @@
-/* codegen.h - HOSC source file */
+/*
+ * File: compiler\include\codegen.h
+ * Purpose: HOSC source file.
+ */
 
 #pragma once
 #ifdef __cplusplus

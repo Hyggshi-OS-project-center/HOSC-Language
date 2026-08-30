@@ -1,4 +1,7 @@
-/* test_compiler.c - HOSC source file */
+/*
+ * File: tools\tests\test_compiler.c
+ * Purpose: HOSC source file.
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,7 +23,7 @@ static ASTNode* first_decl(ASTNode* program) {
 
 static void free_program(ASTNode *program) {
     free_ast(program);
-    ast_destroy(ast);
+    ast_release_arena();
 }
 
 static ASTNode* find_function(ASTNode *program, const char *name) {
@@ -232,6 +235,4 @@ int main(void) {
     printf("All tests passed.\n");
     return 0;
 }
-
-
 

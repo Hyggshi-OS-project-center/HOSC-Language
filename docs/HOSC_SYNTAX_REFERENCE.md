@@ -1,8 +1,16 @@
 # HOSC Language Syntax Reference
 
-**Version 1.0** | Complete Syntax Specification
+**Version 2.0** | Reflects the actual grammar implemented in `compiler/src/lexer.c` and `compiler/src/parser.c`
 
 ---
+
+> **Refactor note (2026-07-31):** Version 1.0 of this document described an
+> aspirational syntax (`function`, `println`, `debug_print`, compound
+> assignment operators, etc.) that does not match what the current compiler
+> actually parses. This version was rewritten directly against the lexer and
+> parser source so the examples here are guaranteed to compile. See
+> [`troubleshooting.md`](troubleshooting.md) for known compiler bugs and
+> [`api.md`](api.md) for the diagnostic error codes referenced below.
 
 ## Table of Contents
 
@@ -14,7 +22,7 @@
 6. [Statements](#statements)
 7. [Functions](#functions)
 8. [Control Flow](#control-flow)
-9. [Built-in Functions](#built-in-functions)
+9. [Built-in / Framework Functions](#built-in--framework-functions)
 10. [Comments](#comments)
 11. [Examples](#examples)
 
@@ -22,15 +30,22 @@
 
 ## Language Overview
 
-HOSC (High-level Operating System Control) is a domain-specific language designed for system-level programming and Windows API integration. It provides a clean, readable syntax for common programming tasks while maintaining direct access to system capabilities.
+A HOSC source file is a `package` declaration followed by top-level
+statements and `func` declarations, compiled to HBC bytecode by
+`compiler/src/frontend/pipeline.c` and executed by the stack VM in `vm/`.
 
 ### Key Features
 
-- **Simple, readable syntax** inspired by modern languages
-- **Type inference** for automatic type detection
-- **Windows API integration** with built-in system functions
-- **Portable execution** via HOSC Virtual Machine (HVM)
-- **Memory safety** with automatic memory management
+- A required `package` header and a required `func main()` entry point
+- `let`/`var`/`const` declarations with type inference (no type annotations)
+- Two print forms: `print` (general expression) and `prints[` `` ` `` raw
+  string `` ` `` `]` (backtick-delimited literal text, useful for ASCII art)
+- `if`/`while`/`for`/`switch` control flow, no parentheses required around
+  conditions
+- Dotted-path built-in calls (`audio.play(...)`) used by the optional GUI
+  framework layer — `window`/`text` are statement keywords, not dotted
+  calls, and using them triggers framework-script detection (see
+  [Built-in / Framework Functions](#built-in--framework-functions))
 
 ---
 
@@ -38,15 +53,11 @@ HOSC (High-level Operating System Control) is a domain-specific language designe
 
 ### Identifiers
 
-Identifiers are used for variable names, function names, and other user-defined symbols.
-
-**Rules:**
 - Must start with a letter (`a-z`, `A-Z`) or underscore (`_`)
 - Can contain letters, digits (`0-9`), and underscores
 - Case-sensitive
 - Cannot be a reserved keyword
 
-**Examples:**
 ```
 myVariable
 _private
@@ -56,29 +67,41 @@ MAX_SIZE
 
 ### Keywords
 
-Reserved words that have special meaning in the language:
+These are the only words the lexer recognizes as keywords (anything else is
+an identifier):
 
 ```
-let          const        function     return
-if           else        while        for
-break        continue     true         false
-null         import       package      as
-print        println      debug_print
-error        warning      info
+var          let          const        func
+package      import       print        prints
+if           else         while        for
+return       break        continue     switch
+case         default      window       text
+true         false
 ```
+
+There is **no** `function` keyword, no `println`/`debug_print`/`error`/
+`warning`/`info` print variants, and no `as` keyword — those do not exist in
+the current lexer (`compiler/src/lexer.c`).
 
 ### Operators
 
-#### Arithmetic Operators
+#### Arithmetic
 ```
 +    Addition
 -    Subtraction
 *    Multiplication
 /    Division
-%    Modulo
+%    Modulo — lexes and parses, but currently fails to compile (see note below)
 ```
 
-#### Comparison Operators
+> **Known bug:** `%` is tokenized (`TOKEN_PERCENT`) and parses into a valid
+> `AST_BINARY_OP`, but the bytecode emitter's binary-op switch in
+> `compiler/src/frontend/pipeline.c` has no case for it and falls through to
+> `default: return 0;`. Any expression using `%` fails with diagnostic
+> `H900` ("failed to emit bytecode"), even though it type-checks fine. See
+> [`troubleshooting.md`](troubleshooting.md).
+
+#### Comparison
 ```
 ==   Equal to
 !=   Not equal to
@@ -88,30 +111,29 @@ error        warning      info
 >=   Greater than or equal to
 ```
 
-#### Logical Operators
+#### Logical
 ```
 &&   Logical AND
 ||   Logical OR
 !    Logical NOT
 ```
 
-#### Assignment Operators
+#### Assignment
 ```
 =    Assignment
-+=   Addition assignment
--=   Subtraction assignment
-*=   Multiplication assignment
-/=   Division assignment
-%=   Modulo assignment
 ```
 
-#### Other Operators
+There are **no** compound assignment operators (`+=`, `-=`, `*=`, `/=`,
+`%=`) and no increment/decrement (`++`, `--`) in the lexer. Write them out:
+`x = x + 1;` instead of `x += 1;`.
+
+#### Other
 ```
 ()   Function call / Grouping
-[]   Array indexing
-.    Member access
+[]   prints[...] delimiter (not general array indexing)
+.    Dotted call path (e.g. audio.play)
 ,    Separator
-;    Statement terminator
+;    Statement terminator (often optional — see below)
 ```
 
 ### Literals
@@ -119,26 +141,33 @@ error        warning      info
 #### Integer Literals
 ```
 42
--10
-0
 1000
 ```
+Parsed with `strtol`; overflow beyond `int` range is a lexer error.
 
 #### Floating-Point Literals
 ```
 3.14
--0.5
 2.71828
 1.0
+1e10
+2.5e-3
 ```
 
-#### String Literals
+#### String Literals (double-quoted)
 ```
 "Hello, World!"
-"Multi-line
-string"
 "Escaped \"quotes\""
 ```
+Supported escapes: `\n`, `\r`, `\t`, `\"`, `\\`. Double-quoted strings
+**cannot** span multiple lines.
+
+#### Raw String Literals (backtick-delimited)
+```
+`literal text, no escape processing except \` for a literal backtick`
+```
+Backtick strings **can** span multiple lines and are used exclusively with
+`prints[...]` (see below).
 
 #### Boolean Literals
 ```
@@ -146,190 +175,166 @@ true
 false
 ```
 
-#### Null Literal
-```
-null
-```
+There is **no** `null` literal in this grammar.
 
 ---
 
 ## Data Types
 
-HOSC supports the following data types:
-
-### Primitive Types
-
-1. **Integer** (`int`)
-   - 64-bit signed integer
-   - Range: -9,223,372,036,854,775,808 to 9,223,372,036,854,775,807
-
-2. **Float** (`float`)
-   - 64-bit double-precision floating-point
-   - IEEE 754 standard
-
-3. **String** (`string`)
-   - Sequence of characters
-   - Immutable
-   - UTF-8 encoded
-
-4. **Boolean** (`bool`)
-   - `true` or `false`
-
-5. **Null** (`null`)
-   - Represents absence of value
-
-### Type Inference
-
-HOSC automatically infers types from values:
+Types are inferred from the value, not declared:
 
 ```hosc
-let x = 42;           // int
+let x = 42;           // integer
 let y = 3.14;         // float
 let name = "HOSC";    // string
-let active = true;    // bool
+let active = true;    // boolean
 ```
+
+There is no `int`/`float`/`string`/`bool` type-name syntax and no explicit
+type annotations — the semantic analyzer (`compiler/src/sema/type_checker.c`)
+infers and checks types after parsing.
 
 ---
 
 ## Variables and Constants
 
-### Variable Declaration
+### `let` / `var` Declaration
 
-Variables are declared using the `let` keyword:
-
-**Syntax:**
 ```
 let identifier = expression;
+var identifier = expression;
 ```
 
-**Examples:**
+`let` and `const` both bind an **immutable** value (the semantic analyzer
+tracks them as `SYMBOL_CONST` internally); `var` is the only **mutable**
+declaration. This is the reverse of the `let`/`var` convention in
+JavaScript — reassigning a `let` in HOSC is diagnostic `H203`, the same
+error you get from reassigning a `const`.
+
 ```hosc
-let count = 0;
-let price = 99.99;
-let message = "Hello";
-let isActive = true;
+let count = 0;      // immutable
+var price = 99.99;  // mutable — can be reassigned later
 ```
 
-### Constant Declaration
+### `const` Declaration
 
-Constants are declared using the `const` keyword and cannot be reassigned:
-
-**Syntax:**
 ```
 const identifier = expression;
 ```
 
-**Examples:**
 ```hosc
 const PI = 3.14159;
-const MAX_USERS = 1000;
 const APP_NAME = "HOSC Application";
 ```
 
-### Variable Assignment
+`const` and `let` are functionally identical for reassignment purposes —
+both produce `H203` ("cannot reassign to constant '...'") if you try to
+assign to them again.
 
-Variables can be reassigned using the assignment operator:
+### Assignment
 
 ```hosc
-let x = 10;
-x = 20;              // Reassign x to 20
-x += 5;              // x is now 25
-x *= 2;              // x is now 50
+var x = 10;
+x = 20;
 ```
+
+Only `var`-declared identifiers can be reassigned. No `+=`/`-=`/etc. — see
+[Operators](#operators).
 
 ---
 
 ## Expressions
 
-### Arithmetic Expressions
+### Arithmetic
 
 ```hosc
-let sum = 10 + 20;           // 30
-let diff = 100 - 50;         // 50
-let product = 5 * 6;          // 30
-let quotient = 20 / 4;        // 5
-let remainder = 17 % 5;       // 2
+let sum = 10 + 20;
+let product = 5 * 6;
+let quotient = 20 / 4;
 ```
 
-### Comparison Expressions
+`17 % 5` parses but fails to compile (`H900`) — see the modulo note above.
+
+### Comparison / Logical
 
 ```hosc
 let isEqual = (x == y);
-let isNotEqual = (x != y);
-let isLess = (x < y);
-let isGreater = (x > y);
-```
-
-### Logical Expressions
-
-```hosc
 let both = (x > 0 && y > 0);
-let either = (x > 0 || y > 0);
 let not = !isActive;
 ```
 
 ### String Concatenation
 
 ```hosc
-let greeting = "Hello" + " " + "World";  // "Hello World"
-let fullName = firstName + " " + lastName;
+let greeting = "Hello" + " " + "World";
 ```
+
+### Function / Dotted Calls
+
+```hosc
+let result = add(5, 3);
+audio.play({ file: "song.mp3" });
+```
+
+`window(...)` / `text(...)` exist in the grammar too, but calling them
+triggers framework-script detection before parsing even runs — see
+[Built-in / Framework Functions](#built-in--framework-functions).
+
+Calling an unknown identifier (not a declared `func`, not a known built-in)
+produces diagnostic `H205` with a "did you mean" suggestion when a close
+match exists.
 
 ---
 
 ## Statements
 
-### Expression Statements
+### Statement Terminators Are Often Optional
 
-Any expression followed by a semicolon is a statement:
+`consume_statement_end` in the parser accepts a `;`, or lets the terminator
+be implied when the next token itself starts a new statement (another
+keyword, `{`, `}`, end of file, etc.). In practice, always write the `;` —
+relying on the implicit form is fragile and not guaranteed by the grammar
+long-term.
+
+### Print Statement
 
 ```hosc
-x + y;
-print "Hello";
+print "Hello, World!";
+print x;
+print("Value: " + x);       // parens are optional around the expression
 ```
+
+### Raw String Print (`prints[...]`)
+
+```hosc
+prints[`
+literal, multi-line text goes here
+`];
+```
+
+- Must be `prints[` followed immediately by a backtick raw string, then `]`.
+- Anything other than `]` right after the closing backtick — including a
+  stray character before it — is diagnostic `H104`
+  ("unexpected token '...' after raw string; did you mean ']'?").
+- This is the construct that a stray character just before the closing
+  backtick (e.g. `` `d]; `` instead of `` `]; ``) will trip.
 
 ### Variable Declaration Statement
 
 ```hosc
 let x = 10;
-let name = "HOSC";
+const name = "HOSC";
 ```
 
-### Print Statements
+### Import Statement
 
-#### Basic Print
 ```hosc
-print "Hello, World!";
-print x;
-print "Value: " + x;
+import "utils.hosc";
 ```
 
-#### Print Line
-```hosc
-println "Hello, World!";
-println x;
-```
-
-#### Debug Print
-```hosc
-debug_print "Debug information";
-debug_print variable;
-```
-
-#### Error Print
-```hosc
-error "An error occurred!";
-```
-
-#### Warning Print
-```hosc
-warning "This is a warning!";
-```
-
-#### Info Print
-```hosc
-info "Information message";
-```
+Only a quoted path is supported at the statement level — see
+`compiler/src/module/import_resolver.c` for how imports are resolved before
+parsing.
 
 ---
 
@@ -337,30 +342,22 @@ info "Information message";
 
 ### Function Declaration
 
-**Syntax:**
 ```
-function functionName(parameter1, parameter2, ...) {
+func functionName(parameter1, parameter2, ...) {
     // function body
     return value;
 }
 ```
 
-**Examples:**
+Note the keyword is `func`, not `function`.
+
 ```hosc
-function add(a, b) {
+func add(a, b) {
     return a + b;
 }
 
-function greet(name) {
+func greet(name) {
     return "Hello, " + name + "!";
-}
-
-function max(a, b) {
-    if (a > b) {
-        return a;
-    } else {
-        return b;
-    }
 }
 ```
 
@@ -369,20 +366,17 @@ function max(a, b) {
 ```hosc
 let result = add(5, 3);
 let message = greet("HOSC");
-let maximum = max(10, 20);
 ```
 
 ### Return Statement
 
-Functions can return values using the `return` statement:
-
 ```hosc
-function square(x) {
+func square(x) {
     return x * x;
 }
 
-function isEven(n) {
-    return n % 2 == 0;
+func noop() {
+    return;   // value is optional
 }
 ```
 
@@ -392,26 +386,19 @@ function isEven(n) {
 
 ### If Statement
 
-**Syntax:**
-```
-if (condition) {
-    // statements
-} else {
-    // statements
-}
-```
+Conditions do **not** require parentheses (though `(...)` is legal as a
+grouped expression):
 
-**Examples:**
 ```hosc
-if (x > 0) {
+if x > 0 {
     print "Positive";
 } else {
     print "Non-positive";
 }
 
-if (age >= 18) {
+if age >= 18 {
     print "Adult";
-} else if (age >= 13) {
+} else if age >= 13 {
     print "Teenager";
 } else {
     print "Child";
@@ -420,187 +407,122 @@ if (age >= 18) {
 
 ### While Loop
 
-**Syntax:**
-```
-while (condition) {
-    // statements
-}
-```
-
-**Examples:**
 ```hosc
-let i = 0;
-while (i < 10) {
+var i = 0;
+while i < 10 {
     print i;
     i = i + 1;
-}
-
-while (isRunning) {
-    process();
 }
 ```
 
 ### For Loop
 
-**Syntax:**
+C-style, parens **are** required for `for` specifically:
+
 ```
 for (initialization; condition; increment) {
     // statements
 }
 ```
 
-**Examples:**
 ```hosc
-for (let i = 0; i < 10; i = i + 1) {
+for (var i = 0; i < 10; i = i + 1) {
     print i;
-}
-
-for (let i = 0; i < array.length; i = i + 1) {
-    print array[i];
 }
 ```
 
-### Break Statement
-
-Exits the innermost loop:
+A bare-condition form (no parens, no init/update) is also accepted:
 
 ```hosc
-while (true) {
-    if (condition) {
+for isRunning {
+    // statements
+}
+```
+
+### Switch Statement
+
+```hosc
+switch (value) {
+    case 1:
+        print "one";
+    case 2:
+        print "two";
+    default:
+        print "other";
+}
+```
+
+There is no fallthrough keyword; each `case`/`default` body runs until the
+next `case`/`default`/`}`.
+
+### Break / Continue
+
+```hosc
+while true {
+    if condition {
         break;
     }
 }
-```
 
-### Continue Statement
-
-Skips to the next iteration of the loop:
-
-```hosc
-for (let i = 0; i < 10; i = i + 1) {
-    if (i % 2 == 0) {
+for (var i = 0; i < 10; i = i + 1) {
+    if i == 5 {
         continue;
     }
     print i;
 }
 ```
 
+(`i % 2 == 0` would be the natural "skip even numbers" condition here, but
+`%` currently fails to compile — see the modulo note under
+[Operators](#operators).)
+
 ---
 
-## Built-in Functions
+## Built-in / Framework Functions
 
-### Windows API Functions
+The parser has dedicated grammar for `window(...)` and `text(...)` as
+statement-level keywords:
 
-#### MessageBox
-```hosc
-win32_message_box "Hello, World!";
-win32_message_box "Title", "Message";
+```
+window "(" String ")" ";"
+text "(" Expression "," Expression "," String ")" ";"
 ```
 
-#### Error MessageBox
+e.g. `window("Title");` or `text(10, 20, "Label");`. **In practice these
+never reach the parser**: `hosc_compile_memory()` scans the raw source for
+framework-script markers (`window(`, `text(`, `loop(`, `pump_events(`,
+`on_click(`, `on_key(`, `on_mouse_move(`, `win32_message_box(`) *before*
+parsing, and if any are present it immediately rejects the file with
+diagnostic `H003` ("detected framework GUI script"), regardless of where in
+the file they appear or whether the rest of the source is otherwise valid.
+Run scripts that need `window`/`text` through
+`framework/bin/hosc_framework` instead of `hosc run`.
+
+The one dotted-path built-in that *does* work through the normal pipeline
+is `audio`, because `audio` is an ordinary identifier (not a keyword), so
+it parses as a regular dotted function call:
+
 ```hosc
-win32_error "An error occurred!";
+audio.play("song.mp3");
+audio.play({ file: "song.mp3", loop: true });   // config-object form
 ```
 
-#### Info MessageBox
-```hosc
-win32_info "Information message";
-```
-
-#### Warning MessageBox
-```hosc
-win32_warning "Warning message";
-```
-
-#### Yes/No Dialog
-```hosc
-let result = win32_yesno "Do you want to continue?";
-```
-
-#### Create Window
-```hosc
-win32_create_window "Window Title", "Window Message";
-```
-
-### System Functions
-
-#### Sleep
-```hosc
-sleep 1000;  // Sleep for 1000 milliseconds
-```
-
-#### Beep
-```hosc
-beep 1000;   // Beep at 1000 Hz
-```
-
-#### File Dialog
-```hosc
-let file = win32_file_dialog "Open File", "Text Files (*.txt)|*.txt";
-```
-
-#### Color Dialog
-```hosc
-let color = win32_color_dialog;
-```
-
-#### Font Dialog
-```hosc
-let font = win32_font_dialog;
-```
-
-#### Open URL
-```hosc
-win32_open_url "https://example.com";
-```
-
-#### Get Screen Size
-```hosc
-let size = win32_get_screen_size;
-```
-
-#### Get Cursor Position
-```hosc
-let pos = win32_get_cursor_pos;
-```
-
-#### Set Cursor Position
-```hosc
-win32_set_cursor_pos 100, 200;
-```
-
-#### Get Clipboard Text
-```hosc
-let text = win32_get_clipboard_text;
-```
-
-#### Set Clipboard Text
-```hosc
-win32_set_clipboard_text "Hello, Clipboard!";
-```
-
-#### Get System Info
-```hosc
-let info = win32_get_system_info;
-```
-
-#### Get Time
-```hosc
-let time = win32_get_time;
-```
+There is no `win32_*` family of built-ins in this grammar (no
+`win32_yesno`, `win32_color_dialog`, `sleep`, `beep`, etc.) — those belong
+to the separate framework runtime, not the language the compiler parses.
 
 ---
 
 ## Comments
 
-### Single-Line Comments
+### Single-Line
 
 ```hosc
 // This is a single-line comment
 let x = 10;  // Comment after code
 ```
 
-### Multi-Line Comments
+### Multi-Line
 
 ```hosc
 /*
@@ -609,6 +531,8 @@ let x = 10;  // Comment after code
  */
 ```
 
+Both forms are stripped by the lexer, not passed as tokens.
+
 ---
 
 ## Examples
@@ -616,274 +540,203 @@ let x = 10;  // Comment after code
 ### Example 1: Hello World
 
 ```hosc
-// Simple Hello World program
-print "Hello, World!";
-```
+// Hello World in HOSC
+package main
 
-### Example 2: Variable Operations
-
-```hosc
-let x = 10;
-let y = 20;
-let sum = x + y;
-let product = x * y;
-
-print "Sum: " + sum;
-print "Product: " + product;
-```
-
-### Example 3: Conditional Logic
-
-```hosc
-let age = 25;
-
-if (age >= 18) {
-    print "You are an adult";
-} else {
-    print "You are a minor";
+func main() {
+    print "Hello, World!";
 }
 ```
 
-### Example 4: Loop
+### Example 2: Raw String / ASCII Art
 
 ```hosc
-// Count from 1 to 10
-for (let i = 1; i <= 10; i = i + 1) {
-    print i;
+package main
+
+func main() {
+    prints[`
+ _   _  ___  ____   ____
+| | | |/ _ \/ ___| / ___|
+| |_| | | | \___ \| |
+|  _  | |_| |___) | |___
+|_| |_|\___/|____/ \____|
+`];
 }
 ```
 
-### Example 5: Function
+### Example 3: Variables and Arithmetic
 
 ```hosc
-function factorial(n) {
-    if (n <= 1) {
+package main
+
+func main() {
+    let x = 10;
+    let y = 20;
+    let sum = x + y;
+
+    print "Sum: " + sum;
+}
+```
+
+### Example 4: Conditional Logic
+
+```hosc
+package main
+
+func main() {
+    let age = 25;
+
+    if age >= 18 {
+        print "You are an adult";
+    } else {
+        print "You are a minor";
+    }
+}
+```
+
+### Example 5: Loop
+
+```hosc
+package main
+
+func main() {
+    for (var i = 1; i <= 10; i = i + 1) {
+        print i;
+    }
+}
+```
+
+### Example 6: Function
+
+```hosc
+package main
+
+func factorial(n) {
+    if n <= 1 {
         return 1;
     } else {
         return n * factorial(n - 1);
     }
 }
 
-let result = factorial(5);
-print "Factorial of 5: " + result;
-```
-
-### Example 6: Windows API Integration
-
-```hosc
-// Display a message box
-win32_message_box "Welcome to HOSC!";
-
-// Get user confirmation
-let confirmed = win32_yesno "Do you want to continue?";
-
-if (confirmed) {
-    win32_info "You chose to continue!";
-} else {
-    win32_warning "You chose to cancel.";
+func main() {
+    let result = factorial(5);
+    print "Factorial of 5: " + result;
 }
-```
-
-### Example 7: Complete Program
-
-```hosc
-// HOSC Program: Calculator
-function add(a, b) {
-    return a + b;
-}
-
-function subtract(a, b) {
-    return a - b;
-}
-
-function multiply(a, b) {
-    return a * b;
-}
-
-function divide(a, b) {
-    if (b == 0) {
-        error "Division by zero!";
-        return null;
-    }
-    return a / b;
-}
-
-// Main program
-let x = 10;
-let y = 5;
-
-print "Calculator Demo";
-print "x = " + x;
-print "y = " + y;
-print "x + y = " + add(x, y);
-print "x - y = " + subtract(x, y);
-print "x * y = " + multiply(x, y);
-print "x / y = " + divide(x, y);
 ```
 
 ---
 
-## Grammar Summary
-
-### EBNF Grammar
+## Grammar Summary (EBNF)
 
 ```
-Program          ::= Statement*
-Statement        ::= VariableDecl | ConstDecl | FunctionDecl | ExpressionStmt | 
-                     PrintStmt | IfStmt | WhileStmt | ForStmt | ReturnStmt | 
-                     BreakStmt | ContinueStmt
-VariableDecl     ::= "let" Identifier "=" Expression ";"
+Program          ::= "package" Identifier Statement*
+Statement        ::= VariableDecl | ConstDecl | FunctionDecl | ExpressionStmt |
+                     PrintStmt | PrintsStmt | ImportStmt | IfStmt | WhileStmt |
+                     ForStmt | SwitchStmt | ReturnStmt | BreakStmt | ContinueStmt
+VariableDecl     ::= ("let" | "var") Identifier "=" Expression ";"
 ConstDecl        ::= "const" Identifier "=" Expression ";"
-FunctionDecl     ::= "function" Identifier "(" ParameterList? ")" Block
+FunctionDecl     ::= "func" Identifier "(" ParameterList? ")" Block
 ParameterList    ::= Identifier ("," Identifier)*
 ExpressionStmt   ::= Expression ";"
-PrintStmt        ::= ("print" | "println" | "debug_print" | "error" | "warning" | "info") Expression ";"
-IfStmt           ::= "if" "(" Expression ")" Block ("else" Block)?
-WhileStmt        ::= "while" "(" Expression ")" Block
-ForStmt          ::= "for" "(" VariableDecl? ";" Expression? ";" Expression? ")" Block
+PrintStmt        ::= "print" "("? Expression ")"? ";"
+PrintsStmt       ::= "prints" "[" RawString "]" ";"
+ImportStmt       ::= "import" String ";"
+IfStmt           ::= "if" Expression Block ("else" (IfStmt | Block))?
+WhileStmt        ::= "while" Expression Block
+ForStmt          ::= "for" "(" VariableDecl? ";" Expression? ";" ExpressionStmt? ")" Block  (* init must use "var" to be reassignable in the update clause *)
+                    | "for" Expression Block
+SwitchStmt       ::= "switch" "(" Expression ")" "{" CaseClause* "}"
+CaseClause       ::= ("case" Expression | "default") ":" Statement*
 ReturnStmt       ::= "return" Expression? ";"
 BreakStmt        ::= "break" ";"
 ContinueStmt     ::= "continue" ";"
 Block            ::= "{" Statement* "}"
-Expression       ::= Assignment
-Assignment       ::= Identifier ("=" | "+=" | "-=" | "*=" | "/=" | "%=") Assignment | LogicalOr
+Expression       ::= LogicalOr
 LogicalOr        ::= LogicalAnd ("||" LogicalAnd)*
 LogicalAnd       ::= Equality ("&&" Equality)*
 Equality         ::= Comparison (("==" | "!=") Comparison)*
 Comparison       ::= Term (("<" | "<=" | ">" | ">=") Term)*
 Term             ::= Factor (("+" | "-") Factor)*
-Factor           ::= Unary (("*" | "/" | "%") Unary)*
+Factor           ::= Unary (("*" | "/" | "%") Unary)*  (* "%" parses but fails codegen — see note below *)
 Unary            ::= ("!" | "-") Unary | Primary
-Primary          ::= Literal | Identifier | "(" Expression ")" | FunctionCall
-FunctionCall     ::= Identifier "(" ArgumentList? ")"
-ArgumentList     ::= Expression ("," Expression)*
-Literal          ::= Integer | Float | String | Boolean | Null
+Primary          ::= Literal | IdentifierPath (CallArgs)? | "(" Expression ")"
+IdentifierPath   ::= Identifier ("." Identifier)*
+CallArgs         ::= "(" (Expression ("," Expression)*)? ")"
+Literal          ::= Integer | Float | String | RawString | Boolean
 Identifier       ::= [a-zA-Z_][a-zA-Z0-9_]*
 Integer          ::= [0-9]+
-Float            ::= [0-9]+ "." [0-9]+
-String           ::= '"' ([^"\] | EscapeSequence)* '"'
+Float            ::= [0-9]+ "." [0-9]+ (("e"|"E") ("+"|"-")? [0-9]+)?
+String           ::= '"' ([^"\n\r\\] | EscapeSequence)* '"'
+RawString        ::= '`' ([^`\\] | "\`")* '`'
 Boolean          ::= "true" | "false"
-Null             ::= "null"
-EscapeSequence   ::= "\\" ([nrt"\\] | "u" HexDigit{4})
-HexDigit         ::= [0-9a-fA-F]
-```
-
----
-
-## Reserved Keywords
-
-The following words are reserved and cannot be used as identifiers:
-
-```
-let          const        function     return
-if           else         while        for
-break        continue     true         false
-null         import       package      as
-print        println      debug_print
-error        warning      info
-win32_message_box
-win32_error
-win32_info
-win32_warning
-win32_yesno
-win32_create_window
-win32_sleep
-win32_file_dialog
-win32_color_dialog
-win32_font_dialog
-win32_open_url
-win32_beep
-win32_get_screen_size
-win32_get_cursor_pos
-win32_set_cursor_pos
-win32_get_clipboard_text
-win32_set_clipboard_text
-win32_get_system_info
-win32_get_time
-sleep
-beep
+EscapeSequence   ::= "\\" ("n" | "r" | "t" | '"' | "\\")
 ```
 
 ---
 
 ## Operator Precedence
 
-Operators are evaluated in the following order (highest to lowest):
+Highest to lowest:
 
-1. **Function calls, member access** `()`, `.`, `[]`
-2. **Unary operators** `!`, `-`, `+`
-3. **Multiplicative** `*`, `/`, `%`
+1. **Function calls, dotted paths, grouping** `()`, `.`
+2. **Unary operators** `!`, `-`
+3. **Multiplicative** `*`, `/`, `%` (`%` parses at this precedence but currently fails to compile — see the modulo note under [Operators](#operators))
 4. **Additive** `+`, `-`
 5. **Relational** `<`, `<=`, `>`, `>=`
 6. **Equality** `==`, `!=`
 7. **Logical AND** `&&`
 8. **Logical OR** `||`
-9. **Assignment** `=`, `+=`, `-=`, `*=`, `/=`, `%=`
+9. **Assignment** `=`
 
 ---
 
-## Type Coercion
+## Diagnostic Error Codes
 
-HOSC performs automatic type coercion in the following cases:
+See [`api.md`](api.md) for the full, current table (`H000`–`H900`). The
+codes most relevant while writing syntax:
 
-- **Arithmetic operations**: Integers are promoted to floats when mixed
-- **String concatenation**: Numbers and booleans are converted to strings
-- **Boolean context**: All types can be used in boolean expressions
-  - Numbers: `0` and `0.0` are false, all others are true
-  - Strings: Empty string `""` is false, all others are true
-  - `null` is always false
-
----
-
-## Error Handling
-
-### Compile-Time Errors
-
-- Syntax errors (malformed code)
-- Type errors (incompatible types)
-- Undefined variable errors
-- Duplicate declaration errors
-
-### Runtime Errors
-
-- Division by zero
-- Array index out of bounds
-- Null pointer dereference
-- Stack overflow
-- Memory allocation failure
+- `H001` — missing `func main()` entry point
+- `H002` — generic/unclassified syntax error
+- `H003` — framework GUI script run through the wrong entry point
+- `H104` — unknown keyword, or a malformed `prints[...]` closing token
+- `H205` — unknown function/identifier call
 
 ---
 
 ## Best Practices
 
-1. **Use meaningful variable names**: `userCount` instead of `x`
-2. **Declare variables close to use**: Minimize scope
-3. **Use constants for magic numbers**: `const MAX_SIZE = 100;`
-4. **Comment complex logic**: Explain why, not what
-5. **Handle errors gracefully**: Check for null and edge cases
-6. **Use functions for reusable code**: DRY principle
-7. **Follow consistent naming**: camelCase for variables, PascalCase for types
+1. Always write the `func main()` entry point and a leading `package` line.
+2. Terminate every statement with `;` even where it's technically optional.
+3. Use `prints[...]` only for literal/ASCII-art text; use `print` for any
+   expression that needs concatenation or variables.
+4. Remember there are no compound assignment operators — write
+   `x = x + 1;`, not `x += 1;`.
+5. Use `func`, never `function`.
 
 ---
 
 ## Version History
 
-- **v1.0** (Current): Initial syntax specification
-  - Basic language features
-  - Windows API integration
-  - HVM bytecode support
+- **v2.0** (2026-07-31): Rewritten against the actual lexer/parser source.
+  Removed aspirational syntax (`function`, `println`, `debug_print`,
+  `error`/`warning`/`info` prints, compound assignment operators, `null`,
+  `win32_*` built-ins) that the current compiler does not implement, and
+  added `prints[...]`, dotted-path calls, `switch`, and paren-optional
+  `if`/`while` conditions that v1.0 omitted.
+- **v1.0** (2024): Initial syntax specification (aspirational; did not match
+  the compiler implementation).
 
 ---
 
 ## References
 
-- [HOSC Language README](readme.md)
-- [HOSC Virtual Machine Documentation](hvm_readme.md)
-- [HOSC Framework Guide](framework/docs/readme_framework.md)
+- [HOSC Language README](README.md)
+- [Troubleshooting](troubleshooting.md)
+- [API Reference](api.md)
 
 ---
 
-**Document Version:** 1.0  
-**Last Updated:** 2024  
+**Document Version:** 2.0
+**Last Updated:** 2026-07-31
 **Maintained by:** HOSC Language Team
-

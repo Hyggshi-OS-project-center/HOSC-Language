@@ -1,4 +1,7 @@
-/* hvm.h - HOSC source file */
+/*
+ * File: runtime\include\hvm.h
+ * Purpose: HOSC source file.
+ */
 
 #ifndef HVM_H
 #define HVM_H
@@ -10,14 +13,14 @@ extern "C" {
 #include <stdint.h>
 #include <stddef.h>
 
-struct HVM_RuntimeServices;
-struct HVM_Bytecode;
-
 #define HVM_STACK_SIZE 1024
 #define HVM_CALL_STACK_SIZE 512
 #define HVM_MEMORY_SIZE 4096
 #define HVM_MAX_FUNCTIONS 256
 #define HVM_MAX_STRINGS 512
+
+typedef struct HoscApiContext HoscApiContext;
+typedef struct HVM_RuntimeServices HVM_RuntimeServices;
 
 typedef enum {
     HVM_PUSH_INT,
@@ -70,7 +73,6 @@ typedef enum {
     HVM_SLEEP,
     HVM_BEEP,
 
-    /* Legacy GUI opcodes (deprecated; use HVM_CALL_NATIVE) */
     HVM_CREATE_WINDOW,
     HVM_DRAW_TEXT,
     HVM_DRAW_BUTTON,
@@ -112,7 +114,6 @@ typedef enum {
     HVM_TEXTAREA_SET,
     HVM_EXEC_COMMAND,
 
-    HVM_CALL_NATIVE,
     HVM_OPCODE_COUNT
 } HVM_Opcode;
 
@@ -151,7 +152,6 @@ typedef struct {
     size_t local_count;
 } HVM_Function;
 
-/* Legacy GC node (deprecated; retained for ABI compatibility). */
 typedef struct HVM_GCObject {
     char *ptr;
     size_t size;
@@ -172,7 +172,6 @@ typedef struct {
     HVM_Instruction* instructions;
     size_t instruction_count;
     size_t instruction_capacity;
-    struct HVM_Bytecode *bytecode;
 
     size_t pc;
 
@@ -182,31 +181,33 @@ typedef struct {
     char* strings[HVM_MAX_STRINGS];
     size_t string_count;
 
-    struct HVM_RuntimeServices *services;
-
     int running;
     int error_code;
     char* error_message;
 
-    char* scratch_a;
-    size_t scratch_a_cap;
-    char* scratch_b;
-    size_t scratch_b_cap;
-    char* scratch_concat;
-    size_t scratch_concat_cap;
-
-    /* Legacy GC fields (unused by C++ heap-backed GC). */
     HVM_GCObject *gc_objects;
     size_t gc_object_count;
     size_t gc_bytes;
     size_t gc_next_collection;
     int gc_enabled;
     int gc_pending;
-    void *gc_heap;
+
+    HoscApiContext *cpp_api;
+    HVM_RuntimeServices *services;
+    int allow_host_file_io;
+    int allow_host_shell_exec;
+
+    char *scratch_a;
+    size_t scratch_a_cap;
+    char *scratch_b;
+    size_t scratch_b_cap;
+    char *scratch_concat;
+    size_t scratch_concat_cap;
 } HVM_VM;
 
 HVM_VM* hvm_create(void);
 void hvm_destroy(HVM_VM* vm);
+void hvm_set_host_capabilities(HVM_VM* vm, int allow_file_io, int allow_shell_exec);
 int hvm_load_bytecode(HVM_VM* vm, const HVM_Instruction* instructions, size_t count);
 int hvm_run(HVM_VM* vm);
 
@@ -248,5 +249,3 @@ void hvm_disassemble(HVM_VM* vm);
 #endif
 
 #endif // HVM_H
-
-

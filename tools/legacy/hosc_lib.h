@@ -1,4 +1,7 @@
-/* hosc_lib.h - HOSC source file */
+/*
+ * File: tools\legacy\hosc_lib.h
+ * Purpose: HOSC source file.
+ */
 
 #ifndef HOSC_LIB_H
 #define HOSC_LIB_H
@@ -29,4 +32,3 @@ int hosc_quick_compile(ASTNode* ast, const char* output_file);
 #endif
 
 #endif // HOSC_LIB_H
-

@@ -1,32 +1,50 @@
 # HOSC Language Quick Reference
 
-**Quick syntax reference for HOSC language**
+**Quick syntax reference for HOSC language — matches the actual compiler
+grammar (`compiler/src/lexer.c`, `compiler/src/parser.c`), not aspirational
+syntax. See [HOSC_SYNTAX_REFERENCE.md](HOSC_SYNTAX_REFERENCE.md) for the
+full rewrite notes.**
 
 ---
+
+## Program Shape
+
+```hosc
+package main
+
+func main() {
+    // statements
+}
+```
+
+A `package` header and a `func main()` entry point are required.
 
 ## Variables & Constants
 
 ```hosc
-let x = 10;                    // Variable
-const PI = 3.14159;            // Constant
-x = 20;                        // Reassignment
+let x = 10;                    // Immutable binding (like const)
+var y = 5;                     // Mutable — only var can be reassigned
+const PI = 3.14159;            // Constant (same as let, functionally)
+y = 20;                        // OK: reassigning a var
+// x = 20;                     // Error H203: cannot reassign to constant 'x'
 ```
 
-## Data Types
+## Data Types (inferred, no annotations)
 
 ```hosc
 let int_val = 42;              // Integer
 let float_val = 3.14;          // Float
 let str_val = "Hello";         // String
 let bool_val = true;           // Boolean
-let null_val = null;           // Null
 ```
+
+There is no `null` literal.
 
 ## Operators
 
 ```hosc
 // Arithmetic
-+  -  *  /  %
++  -  *  /      // '%' also lexes but currently fails to compile (H900) — see full reference
 
 // Comparison
 ==  !=  <  <=  >  >=
@@ -35,38 +53,52 @@ let null_val = null;           // Null
 &&  ||  !
 
 // Assignment
-=  +=  -=  *=  /=  %=
+=
 ```
+
+**No** compound assignment (`+=`, `-=`, etc.) and **no** `++`/`--` — write
+`x = x + 1;` instead.
 
 ## Print Statements
 
 ```hosc
-print "Hello";                 // Print without newline
-println "World";               // Print with newline
-debug_print "Debug info";     // Debug print
-error "Error message";         // Error print
-warning "Warning message";     // Warning print
-info "Info message";          // Info print
+print "Hello";                 // General expression
+print("Value: " + x);          // Parens around expression are optional
+
+prints[`
+literal multi-line text
+`];                             // Raw backtick string, no interpolation
 ```
+
+There is no `println`, `debug_print`, `error`, `warning`, or `info` print
+variant.
 
 ## Control Flow
 
 ```hosc
-// If statement
-if (condition) {
+// If statement — no parens required around the condition
+if condition {
     // code
 } else {
     // code
 }
 
 // While loop
-while (condition) {
+while condition {
     // code
 }
 
-// For loop
-for (let i = 0; i < 10; i = i + 1) {
+// For loop — parens required
+for (var i = 0; i < 10; i = i + 1) {
     // code
+}
+
+// Switch
+switch (value) {
+    case 1:
+        print "one";
+    default:
+        print "other";
 }
 
 // Break and continue
@@ -77,8 +109,8 @@ continue;
 ## Functions
 
 ```hosc
-// Function declaration
-function add(a, b) {
+// Function declaration — keyword is 'func', not 'function'
+func add(a, b) {
     return a + b;
 }
 
@@ -86,18 +118,18 @@ function add(a, b) {
 let result = add(5, 3);
 ```
 
-## Windows API
+## Framework Built-ins
 
 ```hosc
-win32_message_box "Message";
-win32_error "Error";
-win32_info "Info";
-win32_warning "Warning";
-win32_yesno "Question";
-win32_create_window "Title", "Message";
-sleep 1000;                    // Milliseconds
-beep 1000;                     // Frequency
+audio.play("song.mp3");                          // works — 'audio' isn't a keyword
+audio.play({ file: "song.mp3", loop: true });     // config-object form
 ```
+
+`window("Title");` and `text(10, 20, "Label");` exist in the grammar, but
+any file containing `window(` or `text(` is intercepted **before parsing**
+and rejected with `H003` — run those through `framework/bin/hosc_framework`
+instead of `hosc run`. There is no `win32_*` built-in family and no
+`sleep`/`beep` statement in this grammar.
 
 ## Comments
 
@@ -113,44 +145,64 @@ beep 1000;                     // Frequency
 
 ### Hello World
 ```hosc
-print "Hello, World!";
+package main
+
+func main() {
+    print "Hello, World!";
+}
 ```
 
 ### Variables
 ```hosc
-let x = 10;
-let y = 20;
-let sum = x + y;
-print sum;
+package main
+
+func main() {
+    let x = 10;
+    let y = 20;
+    let sum = x + y;
+    print sum;
+}
 ```
 
 ### Conditional
 ```hosc
-if (x > 0) {
-    print "Positive";
-} else {
-    print "Non-positive";
+package main
+
+func main() {
+    let x = 5;
+    if x > 0 {
+        print "Positive";
+    } else {
+        print "Non-positive";
+    }
 }
 ```
 
 ### Loop
 ```hosc
-for (let i = 0; i < 10; i = i + 1) {
-    print i;
+package main
+
+func main() {
+    for (var i = 0; i < 10; i = i + 1) {
+        print i;
+    }
 }
 ```
 
 ### Function
 ```hosc
-function square(x) {
+package main
+
+func square(x) {
     return x * x;
 }
 
-let result = square(5);
-print result;
+func main() {
+    let result = square(5);
+    print result;
+}
 ```
 
 ---
 
-**See [hosc_syntax_reference.md](hosc_syntax_reference.md) for complete documentation.**
-
+**See [HOSC_SYNTAX_REFERENCE.md](HOSC_SYNTAX_REFERENCE.md) for complete documentation.**

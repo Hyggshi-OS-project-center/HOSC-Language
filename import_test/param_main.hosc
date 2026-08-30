@@ -1,0 +1,7 @@
+package main
+
+import "math_utils.hosc"
+
+func main() {
+    print_value(add_one(40))
+}

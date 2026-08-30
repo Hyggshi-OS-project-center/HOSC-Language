@@ -1,0 +1,112 @@
+# Build script for HOSC framework runtime
+# Dynamically selects the appropriate GUI backend at runtime
+# Supports: Win32 (Windows), X11 (Linux/Unix), Console (fallback)
+
+CC ?= gcc
+CFLAGS ?= -Wall -Wextra -std=c99 -O2
+INCLUDES = -Iinclude -I../services/include
+
+# Backend source files - always compiled, runtime selection determines which is used
+BACKEND_SRC = ../services/src/runtime_gui_backend.c \
+              ../services/src/runtime_gui_backend_console.c
+
+ifeq ($(OS),Windows_NT)
+EXE = .exe
+GUI_LIBS = -luser32 -lgdi32 -lkernel32 -lgdiplus -lole32 -lcomdlg32 -lmfplay -lmfplat -lmf -lmfuuid -lm
+RUNNER = .\\
+MKDIR_BIN = if not exist bin mkdir bin
+RM_FILE = del /Q
+else
+EXE =
+GUI_LIBS = -lm
+# X11 detection on Linux/Unix
+UNAME_S := $(shell uname -s)
+ifneq (, $(filter Linux%,$(UNAME_S)))
+  # Check if X11 headers and libs are available
+  X11_AVAILABLE := $(shell pkg-config --exists x11 2>/dev/null && echo yes)
+  ifeq ($(X11_AVAILABLE),yes)
+    BACKEND_SRC += ../services/src/runtime_gui_backend_x11.c
+    GUI_LIBS += $(shell pkg-config --libs x11) $(shell pkg-config --cflags x11)
+    CFLAGS += $(shell pkg-config --cflags x11)
+    # Xft is used by the X11 backend to render text at arbitrary pixel sizes.
+    XFT_AVAILABLE := $(shell pkg-config --exists xft 2>/dev/null && echo yes)
+    ifeq ($(XFT_AVAILABLE),yes)
+      CFLAGS += $(shell pkg-config --cflags xft)
+      GUI_LIBS += $(shell pkg-config --libs xft) -lfontconfig -lXrender
+    endif
+  endif
+endif
+RUNNER = ./
+MKDIR_BIN = mkdir -p bin
+RM_FILE = rm -f
+
+# Audio backend selection: auto (default) picks libmpv > libvlc > CLI-subprocess
+# fallback, whichever is actually available via pkg-config. Force one with e.g.
+#   make -f Makefile.framework AUDIO_BACKEND=vlc
+#   make -f Makefile.framework AUDIO_BACKEND=exec   (always use the subprocess backend)
+AUDIO_BACKEND ?= auto
+
+ifeq ($(AUDIO_BACKEND),exec)
+  # subprocess fallback only, skip library detection entirely
+else
+  MPV_AVAILABLE := $(shell pkg-config --exists mpv 2>/dev/null && echo yes)
+  VLC_AVAILABLE := $(shell pkg-config --exists libvlc 2>/dev/null && echo yes)
+
+  ifeq ($(AUDIO_BACKEND),mpv)
+    ifeq ($(MPV_AVAILABLE),yes)
+      CFLAGS += -DHOSC_HAVE_LIBMPV $(shell pkg-config --cflags mpv)
+      GUI_LIBS += $(shell pkg-config --libs mpv)
+    endif
+  else ifeq ($(AUDIO_BACKEND),vlc)
+    ifeq ($(VLC_AVAILABLE),yes)
+      CFLAGS += -DHOSC_HAVE_LIBVLC $(shell pkg-config --cflags libvlc)
+      GUI_LIBS += $(shell pkg-config --libs libvlc)
+    endif
+  else
+    # auto: prefer libmpv, then libvlc, then fall back to CLI subprocess
+    ifeq ($(MPV_AVAILABLE),yes)
+      CFLAGS += -DHOSC_HAVE_LIBMPV $(shell pkg-config --cflags mpv)
+      GUI_LIBS += $(shell pkg-config --libs mpv)
+    else ifeq ($(VLC_AVAILABLE),yes)
+      CFLAGS += -DHOSC_HAVE_LIBVLC $(shell pkg-config --cflags libvlc)
+      GUI_LIBS += $(shell pkg-config --libs libvlc)
+    endif
+  endif
+endif
+endif
+
+SRC = src/hosc_framework.c src/hosc_runtime.c src/hosc_modules.c
+OUT = bin/hosc_framework$(EXE)
+
+all: framework
+
+framework: $(OUT)
+
+$(OUT): $(SRC) include/hosc_runtime.h $(BACKEND_SRC) | bin
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(SRC) $(BACKEND_SRC) $(GUI_LIBS)
+
+bin:
+	$(MKDIR_BIN)
+
+run: framework
+	$(RUNNER)$(OUT) run examples/hello_world_window.hosc
+
+run-smoke: framework
+	$(RUNNER)$(OUT) run examples/Hello.hosc
+
+clean:
+	$(RM_FILE) $(OUT)
+
+help:
+	@echo "Targets:"
+	@echo "  make -f Makefile.framework framework"
+	@echo "  make -f Makefile.framework run"
+	@echo "  make -f Makefile.framework run-smoke"
+	@echo "  make -f Makefile.framework clean"
+	@echo ""
+	@echo "Backend selection:"
+	@echo "  On Windows: Win32 backend (native)"
+	@echo "  On Linux with X11: X11 backend (if libx11-dev/pkg-config available)"
+	@echo "  Fallback: Console backend (always available)"
+
+.PHONY: all framework run run-smoke clean help

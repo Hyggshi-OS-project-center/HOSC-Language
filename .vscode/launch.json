@@ -1,17 +1,23 @@
 {
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "name": "Run C Program",
-            "type": "cppdbg",
-            "request": "launch",
-            "program": "${fileDirname}/${fileBasenameNoExtension}.exe",
-            "args": [],
-            "stopAtEntry": false,
-            "cwd": "${fileDirname}",
-            "MIMode": "gdb",
-            "miDebuggerPath": "C:/mingw64/bin/gdb.exe", 
-            "preLaunchTask": "C/C++: gcc build active file"
-        }
-    ]
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Launch HOSC target (CMake Tools)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${command:cmake.launchTargetPath}",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "MIMode": "gdb",
+      "preLaunchTask": "Build HOSC (CMake)"
+    },
+    {
+      "name": "Debug HOSC Program",
+      "type": "hosc",
+      "request": "launch",
+      "program": "${workspaceFolder}/${fileBasenameNoExtension}.hosc",
+      "stopOnEntry": false
+    }
+  ]
 }

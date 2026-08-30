@@ -1,4 +1,7 @@
-/* hosc_engine.c - HOSC source file */
+/*
+ * File: tools\legacy\hosc_engine.c
+ * Purpose: HOSC source file.
+ */
 
 #include "ast.h"
 #include "include/runtime.h"
@@ -27,4 +30,3 @@ void hosc_engine_compile(ASTNode* ast, const char* output_file) {
 }
 
 // Main function removed to avoid conflicts with core.c
-

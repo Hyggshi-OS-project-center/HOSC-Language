@@ -1,0 +1,100 @@
+{
+  "Main function": {
+    "prefix": "main",
+    "body": [
+      "package main",
+      "",
+      "func main() {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Boilerplate for a HOSC entry-point file: package declaration + main()"
+  },
+  "Function": {
+    "prefix": "func",
+    "body": [
+      "func ${1:name}(${2:params}) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Declare a function"
+  },
+  "If": {
+    "prefix": "if",
+    "body": [
+      "if ${1:condition} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "If statement (no parentheses required around the condition)"
+  },
+  "If Else": {
+    "prefix": "ifelse",
+    "body": [
+      "if ${1:condition} {",
+      "\t$2",
+      "} else {",
+      "\t$0",
+      "}"
+    ],
+    "description": "If/else statement"
+  },
+  "For (C-style)": {
+    "prefix": "for",
+    "body": [
+      "for (var ${1:i} = ${2:0}; ${1:i} < ${3:n}; ${1:i} = ${1:i} + 1) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "C-style for loop — parentheses are required for this form, and the init clause must use var"
+  },
+  "For (bare condition)": {
+    "prefix": "forcond",
+    "body": [
+      "for ${1:condition} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Bare-condition for loop, equivalent to a while loop"
+  },
+  "While": {
+    "prefix": "while",
+    "body": [
+      "while ${1:condition} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "While loop (no parentheses required around the condition)"
+  },
+  "Switch": {
+    "prefix": "switch",
+    "body": [
+      "switch (${1:value}) {",
+      "\tcase ${2:1}:",
+      "\t\t$3",
+      "\tdefault:",
+      "\t\t$0",
+      "}"
+    ],
+    "description": "Switch statement — no fallthrough, each case runs until the next case/default/}"
+  },
+  "Print": {
+    "prefix": "print",
+    "body": "print ${1:expression};",
+    "description": "Print an expression (parentheses are optional)"
+  },
+  "Prints (raw string)": {
+    "prefix": "prints",
+    "body": [
+      "prints[`",
+      "$0",
+      "`];"
+    ],
+    "description": "Print a literal, possibly multi-line raw string verbatim (for ASCII art) — must be prints[ + backtick raw string + ]"
+  },
+  "Import": {
+    "prefix": "import",
+    "body": "import \"${1:module.hosc}\";",
+    "description": "Import statement"
+  }
+}

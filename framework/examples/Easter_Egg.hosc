@@ -1,0 +1,47 @@
+package main
+
+func main() {
+    window({
+        title: "Easter Egg - Momoi",
+        width: 640,
+        height: 640,
+        resizable: false,
+        fullscreen: false,
+        icon: "framework/examples/asset/icon.ico",
+        minWidth: 640,
+        minHeight: 640,
+        center: true
+    })
+
+    audio.play({
+        src: "framework/examples/asset/MiniMax_2026-04-13_18_28_56_Momoi.mp3"
+    })
+
+    image({
+        x: 120,
+        y: 80,
+        width: 400,
+        height: 400,
+        src: "framework/examples/asset/shiroko-catoon-meo.png"
+    })
+
+    system.messageBox({
+        title: "Easter Egg",
+        content: "Easter Egg unlocked!",
+        icon: "info"
+    })
+
+    text({
+        x: 20,
+        y: 24,
+        content: "Easter Egg is active."
+    })
+
+    text({
+        x: 10,
+        y: 580,
+        content: "I don't wait for platforms. I build my own."
+    })
+
+    loop()
+}

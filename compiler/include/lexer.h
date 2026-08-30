@@ -1,4 +1,7 @@
-/* lexer.h - HOSC source file */
+/*
+ * File: compiler\include\lexer.h
+ * Purpose: HOSC source file.
+ */
 
 #pragma once
 #ifdef __cplusplus

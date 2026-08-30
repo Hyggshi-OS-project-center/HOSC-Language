@@ -1,0 +1,64 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    branches: [insider, main]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get diff
+        id: diff
+        run: |
+          git diff origin/${{ github.base_ref }}...HEAD -- '*.c' '*.cpp' '*.h' > diff.txt
+          echo "diff_size=$(wc -c < diff.txt)" >> $GITHUB_OUTPUT
+
+      - name: Review with Gemini
+        if: steps.diff.outputs.diff_size != '0'
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          python3 -c '
+          import json, sys
+
+          with open("diff.txt", "r", encoding="utf-8", errors="ignore") as f:
+              diff_text = f.read(8000)
+
+          prompt = "Review this HOSC Language C/C++ code diff. Check for bugs, memory leaks, unsafe patterns. Be concise:\n\n" + diff_text
+          payload = {
+              "contents": [{
+                  "parts": [{"text": prompt}]
+              }]
+          }
+          with open("payload.json", "w", encoding="utf-8") as f:
+              json.dump(payload, f)
+          '
+          RESPONSE=$(curl -s -X POST \
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=$GEMINI_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d @payload.json)
+          echo "$RESPONSE" | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          print(d['candidates'][0]['content']['parts'][0]['text'])
+          " > review.txt
+          cat review.txt
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const review = fs.readFileSync('review.txt', 'utf8');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## AI Code Review (Gemini)\n\n${review}`
+            })

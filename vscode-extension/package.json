@@ -1,0 +1,124 @@
+{
+  "name": "hosc-debug",
+  "displayName": "HOSC Language Debug",
+  "description": "Debug support for HOSC programming language",
+  "version": "0.2.1",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Debuggers",
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onDebug",
+    "onLanguage:hosc"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "hosc",
+        "aliases": ["HOSC", "hosc"],
+        "extensions": [".hosc"],
+        "configuration": "./syntaxes/language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "hosc",
+        "scopeName": "source.hosc",
+        "path": "./syntaxes/hosc.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "hosc",
+        "path": "./snippets/hosc.json"
+      }
+    ],
+    "semanticTokenTypes": [
+      { "id": "function", "description": "HOSC function name" },
+      { "id": "variable", "description": "HOSC var-declared (mutable) name" }
+    ],
+    "semanticTokenScopes": [
+      {
+        "language": "hosc",
+        "scopes": {
+          "function": ["entity.name.function.hosc"],
+          "variable": ["variable.other.hosc"]
+        }
+      }
+    ],
+    "configuration": {
+      "title": "HOSC",
+      "properties": {
+        "hosc.executablePath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the built hosc(.exe) CLI used for real diagnostics (`hosc check`). If empty, the extension tries ${workspaceFolder}/tools/bin/hosc(.exe), then falls back to PATH. May be relative to the workspace folder."
+        }
+      }
+    },
+    "configurationDefaults": {
+      "[hosc]": {
+        "editor.semanticHighlighting.enabled": true
+      }
+    },
+    "debuggers": [
+      {
+        "type": "hosc",
+        "label": "HOSC Debug",
+        "program": "./out/debugAdapter.js",
+        "runtime": "node",
+        "configurationAttributes": {
+          "launch": {
+            "required": [
+              "program"
+            ],
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "Absolute path to the HOSC program to debug.",
+                "default": "${workspaceFolder}/${fileBasenameNoExtension}.hosc"
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "description": "Automatically stop after launch.",
+                "default": false
+              },
+              "trace": {
+                "type": "boolean",
+                "description": "Enable logging of the debug adapter protocol.",
+                "default": false
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "hosc",
+            "request": "launch",
+            "name": "Debug HOSC Program",
+            "program": "${workspaceFolder}/${fileBasenameNoExtension}.hosc",
+            "stopOnEntry": false
+          }
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@vscode/debugadapter": "^1.68.0",
+    "@vscode/debugprotocol": "^1.68.0"
+  }
+}

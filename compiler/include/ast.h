@@ -1,4 +1,7 @@
-/* ast.h - HOSC source file */
+/*
+ * File: compiler\include\ast.h
+ * Purpose: HOSC source file.
+ */
 
 #pragma once
 #ifdef __cplusplus
@@ -33,6 +36,8 @@ typedef enum {
     AST_RETURN,
     AST_BREAK,
     AST_CONTINUE,
+    AST_SWITCH,
+    AST_CASE,
     AST_WINDOW_STMT,
     AST_TEXT_STMT,
     AST_EOF
@@ -46,10 +51,13 @@ typedef struct ASTNodeList {
 } ASTNodeList;
 
 typedef struct ASTNode {
-    Arena* arena;
     ASTNodeType type;
+    int line;
+    int column;
+    int end_column;
     struct ASTNode *next;
     union {
+
         struct { char *name; } package;
         struct { char *path; } import_stmt;
         struct { char *name; char **params; size_t param_count; struct ASTNode *body; } function;
@@ -70,19 +78,22 @@ typedef struct ASTNode {
         struct { struct ASTNode *condition; struct ASTNode *body; } while_stmt;
         struct { struct ASTNode *init; struct ASTNode *condition; struct ASTNode *update; struct ASTNode *body; } for_stmt;
         struct { struct ASTNode *value; } return_stmt;
+        struct { struct ASTNode *expression; ASTNodeList *cases; } switch_stmt;
+        struct { struct ASTNode *value; struct ASTNode *body; } case_stmt;
         struct { char *title; } window_stmt;
         struct { struct ASTNode *x; struct ASTNode *y; char *msg; } text_stmt;
         struct { struct ASTNode *package; ASTNodeList *declarations; } program;
     } data;
 } ASTNode;
 
-ASTNode* create_ast_node(Arena* arena, ASTNodeType type);
+ASTNode* create_ast_node(ASTNodeType type);
 ASTNode* parser_parse(const char* source);
-ASTNodeList* ast_list_append(Arena* arena, ASTNodeList* head, ASTNode* node);
+ASTNodeList* ast_list_append(ASTNodeList* head, ASTNode* node);
 void free_ast(ASTNode* node);
-void ast_destroy(ASTNode* root);
+void ast_set_arena(Arena* arena);
+Arena* ast_get_arena(void);
+void ast_release_arena(void);
 
 #ifdef __cplusplus
 }
 #endif
-

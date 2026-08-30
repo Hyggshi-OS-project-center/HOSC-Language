@@ -1,71 +1,74 @@
 CC ?= gcc
-CXX ?= g++
-CFLAGS ?= -Wall -Wextra -std=c99 -O2
-CXXFLAGS ?= -Wall -Wextra -std=c++17 -O2
-LDFLAGS = -luser32 -lkernel32 -lgdi32 -lcomdlg32
+CFLAGS = -Wall -Wextra -std=c99 -O2
+CXXFLAGS = -Wall -Wextra -std=c++17 -O2
+
+ifeq ($(OS),Windows_NT)
+EXE = .exe
+PLATFORM_LDFLAGS = -luser32 -lkernel32 -lgdi32 -lcomdlg32
+else
+EXE =
+PLATFORM_LDFLAGS =
+endif
+
+LDFLAGS = $(PLATFORM_LDFLAGS) -lstdc++
 
 ROOT = ..
 OUT_DIR = $(ROOT)/tools/bin
+OBJ_DIR = $(ROOT)/tools/obj
 
 COMPILER_SRC = \
-	$(ROOT)/core/src/file_utils.c \
-	$(ROOT)/compiler/src/hosc_compiler.c \
+	$(ROOT)/legacy/standalone-compiler/hosc_compiler.c \
 	$(ROOT)/compiler/src/lexer.c \
 	$(ROOT)/compiler/src/parser.c \
-	$(ROOT)/compiler/src/arena.cpp \
+	$(ROOT)/compiler/src/arena.c \
 	$(ROOT)/compiler/src/codegen.c \
 	$(ROOT)/compiler/src/ast_utils.c \
 	$(ROOT)/runtime/src/hvm.c \
-	$(ROOT)/runtime/src/bytecode.cpp \
-	$(ROOT)/runtime/src/gc.cpp \
-	$(ROOT)/runtime/src/bytecode_io.c \
-	$(ROOT)/runtime/src/vm_memory.cpp \
-	$(ROOT)/services/src/runtime_gui.c \
-	$(ROOT)/services/src/runtime_services.c \
 	$(ROOT)/runtime/src/hvm_compiler.c
 
+CLI_SRC = $(ROOT)/tools/hosc_cli.c
+
 RUNTIME_SRC = \
-	$(ROOT)/core/src/file_utils.c \
 	$(ROOT)/runtime/src/hvm_runner.c \
-	$(ROOT)/runtime/src/hvm_platform.c \
-	$(ROOT)/runtime/src/hvm.c \
-	$(ROOT)/runtime/src/bytecode.cpp \
-	$(ROOT)/runtime/src/gc.cpp \
-	$(ROOT)/runtime/src/bytecode_io.c \
-	$(ROOT)/runtime/src/vm_memory.cpp \
-	$(ROOT)/services/src/runtime_gui.c \
-	$(ROOT)/services/src/runtime_services.c
+	$(ROOT)/runtime/src/hvm.c
 
-INCLUDES = -I$(ROOT)/compiler/include -I$(ROOT)/runtime/include -I$(ROOT)/core/include -I$(ROOT)/services/include
+CPP_API_SRC = $(ROOT)/runtime/src/hosc_cpp_api.cpp
+CPP_API_OBJ = $(OBJ_DIR)/hosc_cpp_api.o
 
-COMPILER_EXE = $(OUT_DIR)/hosc_compiler.exe
-RUNTIME_EXE = $(OUT_DIR)/hvm.exe
+INCLUDES = -I$(ROOT)/compiler/include -I$(ROOT)/runtime/include
 
-COMPILER_OBJ = $(COMPILER_SRC:.c=.o)
-COMPILER_OBJ := $(COMPILER_OBJ:.cpp=.o)
-RUNTIME_OBJ = $(RUNTIME_SRC:.c=.o)
-RUNTIME_OBJ := $(RUNTIME_OBJ:.cpp=.o)
+COMPILER_EXE = $(OUT_DIR)/hosc-compiler$(EXE)
+RUNTIME_EXE = $(OUT_DIR)/hvm$(EXE)
+CLI_EXE = $(OUT_DIR)/hosc$(EXE)
+TEST_EXE = $(OUT_DIR)/test_compiler$(EXE)
 
-all: $(COMPILER_EXE) $(RUNTIME_EXE)
+all: $(COMPILER_EXE) $(RUNTIME_EXE) $(CLI_EXE) $(TEST_EXE)
 
 $(OUT_DIR):
 	mkdir -p $(OUT_DIR)
 
-$(COMPILER_EXE): $(COMPILER_OBJ) | $(OUT_DIR)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $(COMPILER_OBJ) $(LDFLAGS)
+$(OBJ_DIR):
+	mkdir -p $(OBJ_DIR)
 
-$(RUNTIME_EXE): $(RUNTIME_OBJ) | $(OUT_DIR)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $(RUNTIME_OBJ) $(LDFLAGS)
+$(CPP_API_OBJ): $(CPP_API_SRC) | $(OBJ_DIR)
+	$(CC) $(CXXFLAGS) $(INCLUDES) -x c++ -c $< -o $@
 
-%.o: %.c
-	$(CC) $(CFLAGS) $(INCLUDES) -c -o $@ $<
+$(COMPILER_EXE): $(CLI_SRC) $(COMPILER_SRC) $(CPP_API_OBJ) | $(OUT_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(CLI_SRC) $(COMPILER_SRC) $(CPP_API_OBJ) $(LDFLAGS)
 
-%.o: %.cpp
-	$(CXX) $(CXXFLAGS) $(INCLUDES) -c -o $@ $<
+$(RUNTIME_EXE): $(RUNTIME_SRC) $(CPP_API_OBJ) | $(OUT_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(RUNTIME_SRC) $(CPP_API_OBJ) $(LDFLAGS)
+
+$(CLI_EXE): $(CLI_SRC) $(COMPILER_SRC) $(CPP_API_OBJ) | $(OUT_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(CLI_SRC) $(COMPILER_SRC) $(CPP_API_OBJ) $(LDFLAGS)
+
+$(TEST_EXE): $(ROOT)/tools/tests/test_compiler.c $(COMPILER_SRC) $(CPP_API_OBJ) | $(OUT_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -I$(ROOT)/tools/tests -o $@ $(ROOT)/tools/tests/test_compiler.c $(COMPILER_SRC) $(CPP_API_OBJ) $(LDFLAGS)
+
+test: $(TEST_EXE)
+	$(TEST_EXE)
 
 clean:
-	rm -f $(COMPILER_EXE) $(RUNTIME_EXE) $(COMPILER_OBJ) $(RUNTIME_OBJ)
+	rm -rf $(OUT_DIR) $(OBJ_DIR)
 
-.PHONY: all clean
-
-
+.PHONY: all clean test

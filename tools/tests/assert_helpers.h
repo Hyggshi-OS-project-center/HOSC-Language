@@ -1,4 +1,7 @@
-/* assert_helpers.h - HOSC source file */
+/*
+ * File: tools\tests\assert_helpers.h
+ * Purpose: HOSC source file.
+ */
 
 #ifndef ASSERT_HELPERS_H
 #define ASSERT_HELPERS_H
@@ -43,4 +46,3 @@
 } while(0)
 
 #endif
-

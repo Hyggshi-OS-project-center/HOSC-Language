@@ -1,4 +1,7 @@
-/* hosc_lib.c - HOSC source file */
+/*
+ * File: tools\legacy\hosc_lib.c
+ * Purpose: HOSC source file.
+ */
 
 #include "hosc_lib.h"
 #include "include/runtime.h"
@@ -65,4 +68,3 @@ int hosc_quick_compile(ASTNode* ast, const char* output_file) {
     }
     return 1;
 }
-

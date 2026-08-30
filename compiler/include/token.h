@@ -1,4 +1,7 @@
-/* token.h - HOSC source file */
+/*
+ * File: compiler\include\token.h
+ * Purpose: HOSC source file.
+ */
 
 #pragma once
 #ifdef __cplusplus
@@ -11,10 +14,12 @@ typedef enum {
     TOKEN_UNKNOWN = 0,
     TOKEN_LET,
     TOKEN_VAR,
+    TOKEN_CONST,
     TOKEN_FUNC,
     TOKEN_PACKAGE,
     TOKEN_IMPORT,
     TOKEN_PRINT,
+    TOKEN_PRINTS,
     TOKEN_IF,
     TOKEN_ELSE,
     TOKEN_WHILE,
@@ -22,6 +27,9 @@ typedef enum {
     TOKEN_RETURN,
     TOKEN_BREAK,
     TOKEN_CONTINUE,
+    TOKEN_SWITCH,
+    TOKEN_CASE,
+    TOKEN_DEFAULT,
     TOKEN_WINDOW,
     TOKEN_TEXT,
     TOKEN_IDENTIFIER,
@@ -46,8 +54,11 @@ typedef enum {
     TOKEN_GREATER,
     TOKEN_GREATER_EQUAL,
     TOKEN_DOT,
+    TOKEN_COLON,
     TOKEN_LPAREN,
     TOKEN_RPAREN,
+    TOKEN_LBRACKET,
+    TOKEN_RBRACKET,
     TOKEN_LBRACE,
     TOKEN_RBRACE,
     TOKEN_COMMA,
@@ -70,4 +81,3 @@ typedef struct {
 #ifdef __cplusplus
 }
 #endif
-

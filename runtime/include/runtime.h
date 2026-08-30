@@ -1,4 +1,7 @@
-/* runtime.h - HOSC source file */
+/*
+ * File: runtime\include\runtime.h
+ * Purpose: HOSC source file.
+ */
 
 #pragma once
 
@@ -41,4 +44,3 @@ void runtime_execute_get_time(const char *format);
 #ifdef __cplusplus
 }
 #endif
-

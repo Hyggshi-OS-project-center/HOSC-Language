@@ -1,3 +1,8 @@
+/*
+ * File: tools\legacy\hvm_example.c
+ * Purpose: HOSC source file.
+ */
+
 // hvm_example.c - HOSC Virtual Machine Example
 //
 // Demonstrates how to use the HOSC Virtual Machine (HVM) to execute
@@ -52,7 +57,8 @@ int main() {
         if (hvm_compiler_has_errors(compiler)) {
             hvm_compiler_print_errors(compiler);
         }
-        ast_destroy(ast);
+        free_ast(ast);
+    ast_release_arena();
     hvm_compiler_destroy(compiler);
         hvm_destroy(vm);
         return 1;
@@ -83,11 +89,11 @@ int main() {
     hvm_print_stack(vm);
     
     // Cleanup
-    ast_destroy(ast);
+    free_ast(ast);
+    ast_release_arena();
     hvm_compiler_destroy(compiler);
     hvm_destroy(vm);
     
     return 0;
 }
-
 

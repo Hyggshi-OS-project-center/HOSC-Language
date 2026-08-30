@@ -1,4 +1,7 @@
-/* hosc_runtime.h - Legacy framework runtime API (deprecated; use HVM pipeline) */
+/*
+ * File: framework\include\hosc_runtime.h
+ * Purpose: HOSC source file.
+ */
 
 #ifndef HOSC_RUNTIME_H
 #define HOSC_RUNTIME_H
@@ -19,12 +22,6 @@ extern "C" {
 #define HOSC_RUNTIME_VERSION_MINOR 0
 #define HOSC_RUNTIME_VERSION_PATCH 0
 #define HOSC_RUNTIME_VERSION "1.0.0"
-
-typedef struct HOSCMemoryManager HOSCMemoryManager;
-typedef struct HOSCModuleRegistry HOSCModuleRegistry;
-typedef struct HOSCAPIRegistry HOSCAPIRegistry;
-typedef struct HOSCErrorHandler HOSCErrorHandler;
-typedef struct HOSCLogger HOSCLogger;
 
 // Runtime Configuration
 typedef struct {
@@ -48,19 +45,13 @@ typedef enum {
 typedef struct HOSCRuntimeContext {
     HOSCRuntimeState state;
     HOSCRuntimeConfig config;
-    HOSCMemoryManager* memory_manager;
-    HOSCModuleRegistry* module_registry;
-    HOSCAPIRegistry* api_registry;
-    HOSCErrorHandler* error_handler;
-    HOSCLogger* logger;
+    void* memory_manager;
+    void* module_registry;
+    void* api_registry;
+    void* error_handler;
+    void* logger;
     uint64_t runtime_id;
     uint64_t start_time;
-    void* memory_state;
-    void* module_state;
-    void* api_state;
-    void* error_state;
-    void* logger_state;
-    void* gui_state;
 } HOSCRuntimeContext;
 
 // ============================================================================
@@ -69,7 +60,8 @@ typedef struct HOSCRuntimeContext {
 
 typedef enum {
     HOSC_GUI_BACKEND_CONSOLE = 0,
-    HOSC_GUI_BACKEND_WIN32 = 1
+    HOSC_GUI_BACKEND_WIN32 = 1,
+    HOSC_GUI_BACKEND_X11 = 2
 } HOSCGUIBackend;
 
 typedef enum {
@@ -90,27 +82,57 @@ typedef struct {
     int mouse_button;
 } HOSCGUIEvent;
 
-bool hosc_gui_init(HOSCRuntimeContext* context);
-void hosc_gui_shutdown(HOSCRuntimeContext* context);
-HOSCGUIBackend hosc_gui_backend(HOSCRuntimeContext* context);
-const char* hosc_gui_backend_name(HOSCRuntimeContext* context);
-bool hosc_gui_create_window(HOSCRuntimeContext* context, const char* title, int width, int height);
-void hosc_gui_draw_text(HOSCRuntimeContext* context, int x, int y, const char* text);
-void hosc_gui_message_box(HOSCRuntimeContext* context, const char* message);
-void hosc_gui_pump_events(HOSCRuntimeContext* context);
-bool hosc_gui_poll_event(HOSCRuntimeContext* context, HOSCGUIEvent* out_event);
-bool hosc_gui_is_running(HOSCRuntimeContext* context);
+typedef struct {
+    const char* title;
+    int width;
+    int height;
+    bool resizable;
+    bool fullscreen;
+    const char* icon;
+    int min_width;
+    int min_height;
+    bool center;
+} HOSCGUIWindowOptions;
+
+bool hosc_gui_init(void);
+void hosc_gui_shutdown(void);
+HOSCGUIBackend hosc_gui_backend(void);
+const char* hosc_gui_backend_name(void);
+void hosc_runtime_set_base_dir(const char* base_dir);
+bool hosc_gui_create_window(const char* title, int width, int height);
+bool hosc_gui_create_window_ex(const HOSCGUIWindowOptions* options);
+void hosc_gui_draw_text(int x, int y, const char* text);
+void hosc_gui_draw_text_styled(int x, int y, const char* text, int size, int r, int g, int b, bool bold);
+void hosc_gui_draw_rect(int x, int y, int width, int height, int r, int g, int b, bool filled);
+void hosc_gui_draw_round_rect(int x, int y, int width, int height, int radius,
+                              int fill_r, int fill_g, int fill_b,
+                              int border_r, int border_g, int border_b,
+                              int border_width);
+void hosc_gui_draw_image(int x, int y, int width, int height, const char* image_path);
+void hosc_gui_suspend_present(void);
+void hosc_gui_resume_present(void);
+void hosc_gui_flush(void);
+void hosc_gui_pump_events(void);
+bool hosc_gui_poll_event(HOSCGUIEvent* out_event);
+bool hosc_gui_is_running(void);
+bool hosc_audio_play_file(const char* audio_path, bool async_play);
+void hosc_audio_stop(void);
+bool hosc_gui_pick_audio_file(char* out_path, size_t out_cap);
+bool hosc_audio_has_internal_playback(void);
+int hosc_audio_get_position_ms(void);
+int hosc_audio_get_duration_ms(void);
+bool hosc_audio_seek_ms(int position_ms);
 
 // ============================================================================
 // MEMORY MANAGEMENT FRAMEWORK
 // ============================================================================
 
-typedef struct HOSCMemoryManager {
-    void* (*allocate)(HOSCRuntimeContext* context, size_t size);
-    void* (*reallocate)(HOSCRuntimeContext* context, void* ptr, size_t new_size);
-    void (*deallocate)(HOSCRuntimeContext* context, void* ptr);
-    size_t (*get_allocated_size)(HOSCRuntimeContext* context, void* ptr);
-    void (*dump_memory_stats)(HOSCRuntimeContext* context);
+typedef struct {
+    void* (*allocate)(size_t size);
+    void* (*reallocate)(void* ptr, size_t new_size);
+    void (*deallocate)(void* ptr);
+    size_t (*get_allocated_size)(void* ptr);
+    void (*dump_memory_stats)(void);
 } HOSCMemoryManager;
 
 // ============================================================================
@@ -120,17 +142,17 @@ typedef struct HOSCMemoryManager {
 typedef struct HOSCModule {
     const char* name;
     const char* version;
-    void* (*init)(HOSCRuntimeContext* context);
-    void (*cleanup)(HOSCRuntimeContext* context, void* module_context);
-    void* (*get_function)(HOSCRuntimeContext* context, const char* function_name);
-    bool (*is_loaded)(HOSCRuntimeContext* context);
+    void* (*init)(void);
+    void (*cleanup)(void* context);
+    void* (*get_function)(const char* function_name);
+    bool (*is_loaded)(void);
 } HOSCModule;
 
-typedef struct HOSCModuleRegistry {
-    HOSCModule* (*load_module)(HOSCRuntimeContext* context, const char* module_name);
-    void (*unload_module)(HOSCRuntimeContext* context, HOSCModule* module);
-    HOSCModule* (*get_module)(HOSCRuntimeContext* context, const char* module_name);
-    void (*list_modules)(HOSCRuntimeContext* context);
+typedef struct {
+    HOSCModule* (*load_module)(const char* module_name);
+    void (*unload_module)(HOSCModule* module);
+    HOSCModule* (*get_module)(const char* module_name);
+    void (*list_modules)(void);
 } HOSCModuleRegistry;
 
 // ============================================================================
@@ -144,11 +166,11 @@ typedef struct HOSCAPIFunction {
     bool (*validate_args)(void* args);
 } HOSCAPIFunction;
 
-typedef struct HOSCAPIRegistry {
-    HOSCAPIFunction* (*register_function)(HOSCRuntimeContext* context, const char* name, const char* signature, void* implementation);
-    HOSCAPIFunction* (*get_function)(HOSCRuntimeContext* context, const char* name);
-    void (*unregister_function)(HOSCRuntimeContext* context, const char* name);
-    void (*list_functions)(HOSCRuntimeContext* context);
+typedef struct {
+    HOSCAPIFunction* (*register_function)(const char* name, const char* signature, void* implementation);
+    HOSCAPIFunction* (*get_function)(const char* name);
+    void (*unregister_function)(const char* name);
+    void (*list_functions)(void);
 } HOSCAPIRegistry;
 
 // ============================================================================
@@ -174,11 +196,11 @@ typedef struct {
     uint64_t timestamp;
 } HOSCError;
 
-typedef struct HOSCErrorHandler {
-    void (*report_error)(HOSCRuntimeContext* context, HOSCError* error);
-    void (*clear_errors)(HOSCRuntimeContext* context);
-    HOSCError* (*get_last_error)(HOSCRuntimeContext* context);
-    void (*set_error_handler)(HOSCRuntimeContext* context, void (*handler)(HOSCError*));
+typedef struct {
+    void (*report_error)(HOSCError* error);
+    void (*clear_errors)(void);
+    HOSCError* (*get_last_error)(void);
+    void (*set_error_handler)(void (*handler)(HOSCError*));
 } HOSCErrorHandler;
 
 // ============================================================================
@@ -193,11 +215,11 @@ typedef enum {
     HOSC_LOG_FATAL
 } HOSCLogLevel;
 
-typedef struct HOSCLogger {
-    void (*log)(HOSCRuntimeContext* context, HOSCLogLevel level, const char* message, ...);
-    void (*set_level)(HOSCRuntimeContext* context, HOSCLogLevel level);
-    void (*set_output)(HOSCRuntimeContext* context, const char* file);
-    void (*flush)(HOSCRuntimeContext* context);
+typedef struct {
+    void (*log)(HOSCLogLevel level, const char* message, ...);
+    void (*set_level)(HOSCLogLevel level);
+    void (*set_output)(const char* file);
+    void (*flush)(void);
 } HOSCLogger;
 
 // ============================================================================
@@ -243,29 +265,29 @@ void hosc_runtime_shutdown(HOSCRuntimeContext* context);
 HOSCRuntimeState hosc_runtime_get_state(HOSCRuntimeContext* context);
 
 HOSCMemoryManager* hosc_runtime_get_memory_manager(HOSCRuntimeContext* context);
-void* hosc_allocate(HOSCRuntimeContext* context, size_t size);
-void* hosc_reallocate(HOSCRuntimeContext* context, void* ptr, size_t new_size);
-void hosc_deallocate(HOSCRuntimeContext* context, void* ptr);
+void* hosc_allocate(size_t size);
+void* hosc_reallocate(void* ptr, size_t new_size);
+void hosc_deallocate(void* ptr);
 
 HOSCModuleRegistry* hosc_runtime_get_module_registry(HOSCRuntimeContext* context);
-HOSCModule* hosc_load_module(HOSCRuntimeContext* context, const char* module_name);
-void hosc_unload_module(HOSCRuntimeContext* context, HOSCModule* module);
+HOSCModule* hosc_load_module(const char* module_name);
+void hosc_unload_module(HOSCModule* module);
 
 HOSCAPIRegistry* hosc_runtime_get_api_registry(HOSCRuntimeContext* context);
-void* hosc_call_function(HOSCRuntimeContext* context, const char* function_name, void* args);
+void* hosc_call_function(const char* function_name, void* args);
 
 HOSCErrorHandler* hosc_runtime_get_error_handler(HOSCRuntimeContext* context);
-void hosc_report_error(HOSCRuntimeContext* context, HOSCErrorType type, int code, const char* message, const char* file, int line);
+void hosc_report_error(HOSCErrorType type, int code, const char* message, const char* file, int line);
 
 HOSCLogger* hosc_runtime_get_logger(HOSCRuntimeContext* context);
-void hosc_log(HOSCRuntimeContext* context, HOSCLogLevel level, const char* message, ...);
+void hosc_log(HOSCLogLevel level, const char* message, ...);
 
-HOSCString* hosc_string_create(HOSCRuntimeContext* context, const char* data);
-void hosc_string_destroy(HOSCRuntimeContext* context, HOSCString* str);
-HOSCArray* hosc_array_create(HOSCRuntimeContext* context, size_t initial_capacity);
-void hosc_array_destroy(HOSCRuntimeContext* context, HOSCArray* array);
-HOSCDictionary* hosc_dictionary_create(HOSCRuntimeContext* context, size_t initial_capacity);
-void hosc_dictionary_destroy(HOSCRuntimeContext* context, HOSCDictionary* dict);
+HOSCString* hosc_string_create(const char* data);
+void hosc_string_destroy(HOSCString* str);
+HOSCArray* hosc_array_create(size_t initial_capacity);
+void hosc_array_destroy(HOSCArray* array);
+HOSCDictionary* hosc_dictionary_create(size_t initial_capacity);
+void hosc_dictionary_destroy(HOSCDictionary* dict);
 
 // ============================================================================
 // BUILT-IN MODULES
@@ -282,27 +304,26 @@ extern HOSCModule hosc_gui_module;
 // UTILITY MACROS
 // ============================================================================
 
-#define HOSC_ERROR_REPORT(context, type, code, message) \
-    hosc_report_error((context), (type), (code), (message), __FILE__, __LINE__)
+#define HOSC_ERROR_REPORT(type, code, message) \
+    hosc_report_error(type, code, message, __FILE__, __LINE__)
 
-#define HOSC_LOG_DEBUG(context, message, ...) \
-    hosc_log((context), HOSC_LOG_DEBUG, message, ##__VA_ARGS__)
+#define HOSC_LOG_DEBUG(message, ...) \
+    hosc_log(HOSC_LOG_DEBUG, message, ##__VA_ARGS__)
 
-#define HOSC_LOG_INFO(context, message, ...) \
-    hosc_log((context), HOSC_LOG_INFO, message, ##__VA_ARGS__)
+#define HOSC_LOG_INFO(message, ...) \
+    hosc_log(HOSC_LOG_INFO, message, ##__VA_ARGS__)
 
-#define HOSC_LOG_WARNING(context, message, ...) \
-    hosc_log((context), HOSC_LOG_WARNING, message, ##__VA_ARGS__)
+#define HOSC_LOG_WARNING(message, ...) \
+    hosc_log(HOSC_LOG_WARNING, message, ##__VA_ARGS__)
 
-#define HOSC_LOG_ERROR(context, message, ...) \
-    hosc_log((context), HOSC_LOG_ERROR, message, ##__VA_ARGS__)
+#define HOSC_LOG_ERROR(message, ...) \
+    hosc_log(HOSC_LOG_ERROR, message, ##__VA_ARGS__)
 
-#define HOSC_LOG_FATAL(context, message, ...) \
-    hosc_log((context), HOSC_LOG_FATAL, message, ##__VA_ARGS__)
+#define HOSC_LOG_FATAL(message, ...) \
+    hosc_log(HOSC_LOG_FATAL, message, ##__VA_ARGS__)
 
 #ifdef __cplusplus
 }
 #endif
 
 #endif // HOSC_RUNTIME_H
-

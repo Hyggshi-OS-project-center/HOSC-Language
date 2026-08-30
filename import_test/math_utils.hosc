@@ -1,0 +1,9 @@
+package main
+
+func add_one(value) {
+    return value + 20
+}
+
+func print_value(value) {
+    print(value)
+}

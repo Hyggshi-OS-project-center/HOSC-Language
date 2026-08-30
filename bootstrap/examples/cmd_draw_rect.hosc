@@ -1,0 +1,29 @@
+// HOSC Bootstrap — draw_rect example
+// Demonstrates: typed native C command (INT + STRING args)
+//
+// Run:
+//   ./build/bin/Debug/hosc-bootstrap run bootstrap/examples/cmd_draw_rect.hosc
+
+package main
+
+// AST command wrapper — forwards typed args to native C
+command filled_rect(x, y, w, h, color) {
+    draw_rect(x, y, w, h, color);
+    print("  → drawn at (" + x + ", " + y + ") size " + w + "x" + h);
+}
+
+func main() {
+    print("=== draw_rect demo ===");
+
+    // Native C call — x, y, width, height are INT; color is STRING
+    draw_rect(10, 20, 200, 100, "red");
+    draw_rect(50, 50, 150,  40, "#3498db");
+
+    // Via AST command wrapper
+    filled_rect(0, 0, 800, 600, "black");
+
+    // Type error demo — wrong type triggers stderr warning, returns null
+    draw_rect("10", 20, 200, 100, "red");   // arg 0 is STRING, not INT
+
+    print("=== done ===");
+}

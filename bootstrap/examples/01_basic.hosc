@@ -1,0 +1,51 @@
+// HOSC Bootstrap Example 01 — Cú pháp cơ bản
+// Pipeline: Lexer -> Parser -> AST -> Interpreter
+
+package main
+
+func greet(name) {
+    print("Hello, " + name + "!");
+}
+
+func factorial(n) {
+    if (n <= 1) {
+        return 1;
+    }
+    return n * factorial(n - 1);
+}
+
+func fibonacci(n) {
+    if (n <= 1) { return n; }
+    return fibonacci(n - 1) + fibonacci(n - 2);
+}
+
+func main() {
+    greet("HOSC Bootstrap");
+
+    var x = 10;
+    var y = 3;
+    print("x + y = " + (x + y));
+    print("x * y = " + (x * y));
+    print("x % y = " + (x % y));
+
+    // Conditionals
+    if (x > y) {
+        print("x is greater than y");
+    } else {
+        print("y is >= x");
+    }
+
+    // While loop
+    var count = 0;
+    while (count < 3) {
+        print("count = " + count);
+        count = count + 1;
+    }
+
+    // For loop
+    for (var i = 0; i < 4; i = i + 1) {
+        print("fib(" + i + ") = " + fibonacci(i));
+    }
+
+    print("factorial(5) = " + factorial(5));
+}

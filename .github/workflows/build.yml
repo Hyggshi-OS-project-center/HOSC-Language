@@ -1,0 +1,42 @@
+name: Build HOSC
+
+on:
+  push:
+    branches: [main, insider]
+  pull_request:
+    branches: [main, insider]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: HOSC (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Configure CMake
+        run: cmake -S . -B build/hosc -DHOSC_BUILD_TESTS=ON
+
+      - name: Build HOSC
+        run: cmake --build build/hosc --config Release --parallel
+
+      - name: Run tests
+        run: ctest --test-dir build/hosc --config Release --output-on-failure
+
+      - name: Upload HOSC binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: hosc-${{ matrix.os }}
+          path: build/hosc/bin/
+          if-no-files-found: error

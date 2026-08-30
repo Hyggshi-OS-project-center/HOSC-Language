@@ -1,0 +1,132 @@
+// HOSC Bootstrap Example 02 — Custom Commands & Macros
+//
+// Demonstrates:
+//   - `command`  : Behavioral extension (runs AST body, like a function)
+//   - `macro`    : Syntax extension (AST transformation before evaluation)
+//   - `syntax`   : Alias for macro
+//   - Native C commands registered via bootstrap_register_command() C API
+//
+// Pipeline:
+//   Source
+//     -> Lexer  (stable, deterministic)
+//     -> Parser (stable core grammar)
+//     -> AST
+//     -> AST Rewriter (macro expansion ONLY — core grammar unchanged)
+//     -> Interpreter / Bytecode VM
+
+package main
+
+// ─────────────────────────────────────────
+// Section 1: `command` — Behavioral Extension
+// ─────────────────────────────────────────
+//
+// `command` is like a named function but registered in CommandRegistry.
+// Other code can call it as a statement. Primarily extends behavior.
+//
+command log_info(message) {
+    print("[INFO] " + message);
+}
+
+command log_error(message) {
+    print("[ERROR] " + message);
+}
+
+command assert_true(condition, label) {
+    if (condition) {
+        print("[PASS] " + label);
+    } else {
+        print("[FAIL] " + label);
+    }
+}
+
+// `command` with compound logic
+command swap_print(a, b) {
+    print("Before: a=" + a + " b=" + b);
+    var tmp = a;
+    a = b;
+    b = tmp;
+    print("After:  a=" + a + " b=" + b);
+}
+
+// ─────────────────────────────────────────
+// Section 2: `macro` / `syntax` — AST Transformation
+// ─────────────────────────────────────────
+//
+// `macro` rewrites the AST BEFORE evaluation. The macro body is a
+// template where parameter names are substituted with caller's argument ASTs.
+// Core Lexer/Parser grammar is NOT modified — stability guaranteed.
+//
+// Example: `unless` expands to `if (!condition) { ... }`
+macro unless(condition) {
+    if (!condition) {
+        print("[macro:unless triggered]");
+    }
+}
+
+// `repeat` expands to a `for` loop at AST level
+macro repeat(n) {
+    var __repeat_i = 0;
+    while (__repeat_i < n) {
+        print("  repeat iteration " + __repeat_i);
+        __repeat_i = __repeat_i + 1;
+    }
+}
+
+// `syntax` is an alias for `macro`
+syntax debug_val(val) {
+    print("[DEBUG] value = " + val);
+}
+
+// ─────────────────────────────────────────
+// Section 3: Main demonstration
+// ─────────────────────────────────────────
+func main() {
+    print("=== Command Extension Demo ===");
+
+    // Behavioral commands (AST commands in CommandRegistry)
+    log_info("HOSC Bootstrap started");
+    log_error("This is a simulated error message");
+
+    var x = 10;
+    var y = 42;
+    assert_true(x < y, "x < y");
+    assert_true(x == 10, "x == 10");
+    assert_true(x > 100, "x > 100 (should fail)");
+
+    swap_print(5, 9);
+
+    print("");
+    print("=== Macro / Syntax Expansion Demo ===");
+
+    // `unless` macro — expands to: if (!true) { ... }
+    // (condition is true, so body should NOT execute)
+    var is_ready = true;
+    unless(is_ready);
+
+    // `unless` macro — condition is false, body DOES execute
+    var is_error = false;
+    unless(is_error);
+
+    // `repeat` macro — expands to while loop
+    print("Repeating 3 times:");
+    repeat(3);
+
+    // `syntax` (alias for macro) demo
+    var my_val = 99;
+    debug_val(my_val);
+    debug_val(2 + 2);
+
+    print("");
+    print("=== Native C API Command Demo ===");
+    // `callwindow` is registered via bootstrap_register_command() in main.c
+    // Compiler does not hard-code it — it dispatches via CommandRegistry
+    callwindow("My HOSC Window", 800, 600);
+
+    // Built-in native commands (registered in bs_runtime.c)
+    log("Hello from native log command");
+    assert_eq(2 + 2, 4);
+    assert_eq(10 * 3, 30);
+
+    print("");
+    print("All extensibility examples complete.");
+}

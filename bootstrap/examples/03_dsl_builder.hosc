@@ -1,0 +1,146 @@
+// HOSC Bootstrap Example 03 — DSL Builder
+//
+// Demonstrates building a small domain-specific language on top of HOSC
+// using the command & macro extensibility system.
+//
+// DSL: Simple test framework built entirely in HOSC using `command` and `macro`.
+//
+// Pipeline: Lexer -> Parser (stable) -> AST -> Rewriter -> Interpreter
+
+package main
+
+// ─────────────────────────────────────────────────────────────────
+// Mini Test Framework DSL — built with command + macro
+// ─────────────────────────────────────────────────────────────────
+
+var __test_pass = 0;
+var __test_fail = 0;
+var __current_suite = "default";
+
+// `suite` — group tests under a named section
+command suite(name) {
+    __current_suite = name;
+    print("━━━ Suite: " + name + " ━━━");
+}
+
+// `it` — run a named test with a boolean condition
+command it(label, condition) {
+    if (condition) {
+        print("  ✓  " + label);
+        __test_pass = __test_pass + 1;
+    } else {
+        print("  ✗  " + label);
+        __test_fail = __test_fail + 1;
+    }
+}
+
+// `expect_eq` — assert equality with a descriptive message
+command expect_eq(a, b, label) {
+    if (a == b) {
+        print("  ✓  " + label);
+        __test_pass = __test_pass + 1;
+    } else {
+        print("  ✗  FAILED: " + label + " (expected " + a + " == " + b + ")");
+        __test_fail = __test_fail + 1;
+    }
+}
+
+// `summary` — print test results
+command summary() {
+    print("");
+    print("Test Results ─────────────────────────");
+    print("  Passed: " + __test_pass);
+    print("  Failed: " + __test_fail);
+    if (__test_fail == 0) {
+        print("  Status: ALL TESTS PASSED ✓");
+    } else {
+        print("  Status: SOME TESTS FAILED ✗");
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Math helper functions to test
+// ─────────────────────────────────────────────────────────────────
+
+func add(a, b) { return a + b; }
+func multiply(a, b) { return a * b; }
+func is_even(n) { return n % 2 == 0; }
+func max_val(a, b) {
+    if (a > b) { return a; }
+    return b;
+}
+func clamp(val, lo, hi) {
+    if (val < lo) { return lo; }
+    if (val > hi) { return hi; }
+    return val;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Build a simple Config DSL using `command`
+// ─────────────────────────────────────────────────────────────────
+
+var __config_name = "";
+var __config_version = "";
+var __config_debug = false;
+
+command config_name(name) {
+    __config_name = name;
+    print("[Config] name = " + name);
+}
+
+command config_version(ver) {
+    __config_version = ver;
+    print("[Config] version = " + ver);
+}
+
+command config_debug(enabled) {
+    __config_debug = enabled;
+    print("[Config] debug = " + enabled);
+}
+
+// `macro` for declarative-style config block
+macro config_set(key, value) {
+    print("[CONFIG_SET] " + key + " = " + value);
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Main
+// ─────────────────────────────────────────────────────────────────
+
+func main() {
+    print("=== HOSC Bootstrap DSL Demo ===");
+    print("");
+
+    // ── Config DSL ──────────────────────
+    config_name("hosc-bootstrap");
+    config_version("0.1.0");
+    config_debug(true);
+    config_set("output_dir", "build/bootstrap");
+    config_set("opt_level", "debug");
+
+    print("");
+
+    // ── Test Framework DSL ──────────────
+    suite("Arithmetic");
+    expect_eq(add(2, 3), 5, "2 + 3 == 5");
+    expect_eq(multiply(4, 5), 20, "4 * 5 == 20");
+    expect_eq(add(-1, 1), 0, "-1 + 1 == 0");
+
+    suite("Predicates");
+    it("4 is even", is_even(4));
+    it("7 is odd", !is_even(7));
+    it("0 is even", is_even(0));
+
+    suite("Utilities");
+    expect_eq(max_val(3, 7), 7, "max(3, 7) == 7");
+    expect_eq(max_val(10, 2), 10, "max(10, 2) == 10");
+    expect_eq(clamp(5, 0, 10), 5, "clamp(5, 0..10) == 5");
+    expect_eq(clamp(-5, 0, 10), 0, "clamp(-5, 0..10) == 0");
+    expect_eq(clamp(15, 0, 10), 10, "clamp(15, 0..10) == 10");
+
+    suite("String Ops");
+    it("hello + world", "hello" + " " + "world" == "hello world");
+    it("empty string is falsy", !("" == "non-empty"));
+
+    summary();
+}
