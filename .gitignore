@@ -28,3 +28,11 @@ __pycache__/
 *.py[cod]
 
 import_test/*.mp3
+
+
+import_test/blue_archive_chat.hosc
+
+hello.hosc
+
+import_test/blue_archive.hosc
+import_test/main.hosc

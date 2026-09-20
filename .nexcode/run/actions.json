@@ -1,0 +1,15 @@
+{
+    "version": "0.1.0",
+    "configurations": [
+        {
+            "name": "run file clasic",
+            "request": "launch",
+            "actions": "./tools/bin/hosc run \"${fileWorkspaceFolderRelative}\""
+        },
+        {
+            "name": "run Framework",
+            "request": "launch",
+            "actions": "./framework/bin/hosc_framework run \"${fileWorkspaceFolderRelative}\""
+        }
+    ]
+}
