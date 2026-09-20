@@ -29,6 +29,7 @@ __pycache__/
 
 import_test/*.mp3
 
+import_test/*
 
 import_test/blue_archive_chat.hosc
 
